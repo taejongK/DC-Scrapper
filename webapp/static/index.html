@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DCInside 수집·분석 대시보드</title>
+  <link rel="stylesheet" href="/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/wordcloud@1.2.2/src/wordcloud2.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>🗂️ DCInside 커뮤니티 수집·분석</h1>
+    <div class="filters">
+      <label>갤러리
+        <select id="f-gallery"><option value="">전체</option></select>
+      </label>
+      <label>시작일 <input type="date" id="f-from" /></label>
+      <label>종료일 <input type="date" id="f-to" /></label>
+      <label>키워드 포함 <input type="text" id="f-q" placeholder="예: 에덴 (선택)" /></label>
+      <button id="apply-filters">적용</button>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="collect">📥 수집</button>
+    <button class="tab" data-tab="posts">📋 글 목록</button>
+    <button class="tab" data-tab="analysis">📊 분석</button>
+  </nav>
+
+  <!-- ===== 수집 ===== -->
+  <section id="tab-collect" class="panel active">
+    <div class="card">
+      <h2>수집 실행</h2>
+      <div class="form-grid">
+        <label>갤러리 ID <input id="c-gallery" value="aichatting" /></label>
+        <label>수집 방식
+          <select id="c-mode">
+            <option value="today">오늘</option>
+            <option value="date">특정 날짜</option>
+            <option value="range">기간</option>
+          </select>
+        </label>
+        <label id="c-date-wrap" style="display:none">날짜 <input type="date" id="c-date" /></label>
+        <label id="c-from-wrap" style="display:none">시작일 <input type="date" id="c-from" /></label>
+        <label id="c-to-wrap" style="display:none">종료일 <input type="date" id="c-to" /></label>
+        <label>최대 페이지 <input type="number" id="c-maxpages" value="100" min="1" /></label>
+        <label>딜레이(min~max)
+          <span class="inline"><input type="number" step="0.1" id="c-dmin" value="1.0" />~<input type="number" step="0.1" id="c-dmax" value="2.5" /></span>
+        </label>
+        <label class="check"><input type="checkbox" id="c-comments" checked /> 댓글 포함</label>
+      </div>
+      <button id="start-collect" class="primary">수집 시작</button>
+      <div id="collect-live" class="live"></div>
+    </div>
+    <div class="card">
+      <h2>수집 이력</h2>
+      <table id="runs-table"><thead><tr>
+        <th>갤러리</th><th>대상</th><th>시작</th><th>완료</th><th>발견</th><th>저장</th><th>댓글</th><th>상태</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <!-- ===== 글 목록 ===== -->
+  <section id="tab-posts" class="panel">
+    <div class="card">
+      <div class="toolbar">
+        <input id="p-search" placeholder="제목·본문 검색…" />
+        <select id="p-category"><option value="">전체 말머리</option></select>
+        <select id="p-sort">
+          <option value="posted_at">작성일순</option>
+          <option value="recommend">추천순</option>
+          <option value="view_count">조회순</option>
+          <option value="comment_cnt">댓글순</option>
+        </select>
+        <button id="p-search-btn">검색</button>
+      </div>
+      <table id="posts-table"><thead><tr>
+        <th>번호</th><th>말머리</th><th>제목</th><th>작성자</th><th>작성일</th><th>조회</th><th>추천</th><th>댓글</th>
+      </tr></thead><tbody></tbody></table>
+      <div class="pager">
+        <button id="p-prev">◀ 이전</button>
+        <span id="p-pageinfo"></span>
+        <button id="p-next">다음 ▶</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 분석 ===== -->
+  <section id="tab-analysis" class="panel">
+    <div id="overview-cards" class="cards"></div>
+    <div class="grid-2">
+      <div class="card"><h2>📈 날짜별 글 수</h2><canvas id="chart-date"></canvas></div>
+      <div class="card"><h2>🕐 시간대별 활동</h2><canvas id="chart-hour"></canvas></div>
+      <div class="card"><h2>📅 요일별 활동</h2><canvas id="chart-weekday"></canvas></div>
+      <div class="card"><h2>🏷️ 말머리 분포</h2><canvas id="chart-category"></canvas></div>
+      <div class="card">
+        <h2>🔤 키워드 빈도
+          <select id="kw-source" class="mini">
+            <option value="all">전체</option><option value="title">제목</option>
+            <option value="body">본문</option><option value="comment">댓글</option>
+          </select>
+        </h2>
+        <canvas id="chart-keywords"></canvas>
+      </div>
+      <div class="card">
+        <h2>💬 감성 분포
+          <select id="sent-source" class="mini">
+            <option value="comment">댓글</option><option value="post">글</option><option value="all">전체</option>
+          </select>
+        </h2>
+        <canvas id="chart-sentiment"></canvas>
+        <p class="note">사전 기반 baseline · 슬랭 많은 글은 중립으로 분류될 수 있음</p>
+      </div>
+    </div>
+    <div class="card">
+      <h2>☁️ 워드클라우드
+        <select id="wc-source" class="mini">
+          <option value="all">전체</option><option value="title">제목</option>
+          <option value="body">본문</option><option value="comment">댓글</option>
+        </select>
+      </h2>
+      <div id="wordcloud-wrap"><canvas id="wordcloud" width="1000" height="400"></canvas></div>
+    </div>
+
+    <div class="card">
+      <h2>🔗 연관어 분석</h2>
+      <div class="toolbar">
+        <input id="rel-word" placeholder="키워드 입력 (예: 에덴, 출력, 신드롬)" />
+        <select id="rel-source" class="mini" style="margin-left:0">
+          <option value="all">전체</option><option value="post">글</option><option value="comment">댓글</option>
+        </select>
+        <button id="rel-btn" class="primary">분석</button>
+      </div>
+      <p id="rel-info" class="note"></p>
+      <canvas id="chart-related"></canvas>
+    </div>
+
+    <div class="card">
+      <h2>🏆 인기글 랭킹
+        <select id="top-by" class="mini">
+          <option value="recommend">추천순</option><option value="view_count">조회순</option><option value="comment_cnt">댓글순</option>
+        </select>
+      </h2>
+      <table id="top-table"><thead><tr><th>제목</th><th>작성자</th><th>조회</th><th>추천</th><th>댓글</th></tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <!-- ===== 상세 모달 ===== -->
+  <div id="modal" class="modal-backdrop" style="display:none">
+    <div class="modal"><button id="modal-close">✕</button><div id="modal-body"></div></div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

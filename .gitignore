@@ -1,0 +1,18 @@
+.venv/
+__pycache__/
+*.pyc
+*.db
+*.db-wal
+*.db-shm
+.pytest_cache/
+test_run.db*
+/tmp/
+
+# 로컬 에이전트 도구 / 세션 상태 (개인 환경 종속)
+.omc/
+.claude/settings.local.json
+
+# OS / 에디터
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,289 @@
+"use strict";
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => document.querySelectorAll(s);
+const api = async (path) => (await fetch(path)).json();
+
+// Shared filter state
+const filt = () => {
+  const p = new URLSearchParams();
+  if ($("#f-gallery").value) p.set("gallery_id", $("#f-gallery").value);
+  if ($("#f-from").value) p.set("date_from", $("#f-from").value);
+  if ($("#f-to").value) p.set("date_to", $("#f-to").value);
+  if ($("#f-q") && $("#f-q").value.trim()) p.set("q", $("#f-q").value.trim());
+  return p;
+};
+const fmt = (n) => (n == null ? "-" : Number(n).toLocaleString());
+
+// ---------- Tabs ----------
+$$(".tab").forEach((t) =>
+  t.addEventListener("click", () => {
+    $$(".tab").forEach((x) => x.classList.remove("active"));
+    $$(".panel").forEach((x) => x.classList.remove("active"));
+    t.classList.add("active");
+    $("#tab-" + t.dataset.tab).classList.add("active");
+    if (t.dataset.tab === "analysis") loadAnalysis();
+    if (t.dataset.tab === "posts") loadPosts();
+    if (t.dataset.tab === "collect") loadRuns();
+  })
+);
+
+// ---------- Filters init ----------
+async function initFilters() {
+  const gals = await api("/api/meta/galleries");
+  const sel = $("#f-gallery");
+  gals.forEach((g) => {
+    const o = document.createElement("option");
+    o.value = g.gallery_id;
+    o.textContent = `${g.gallery_id} (${g.n})`;
+    sel.appendChild(o);
+  });
+  if (gals[0]) { $("#f-from").value = gals[0].mn; $("#f-to").value = gals[0].mx; }
+  const cats = await api("/api/stats/categories");
+  cats.forEach((c) => {
+    const o = document.createElement("option");
+    o.value = c.category; o.textContent = `${c.category} (${c.count})`;
+    $("#p-category").appendChild(o);
+  });
+}
+$("#apply-filters").addEventListener("click", () => {
+  if ($("#tab-analysis").classList.contains("active")) loadAnalysis();
+  else if ($("#tab-posts").classList.contains("active")) loadPosts();
+});
+
+// ---------- Collect ----------
+$("#c-mode").addEventListener("change", (e) => {
+  const m = e.target.value;
+  $("#c-date-wrap").style.display = m === "date" ? "flex" : "none";
+  $("#c-from-wrap").style.display = m === "range" ? "flex" : "none";
+  $("#c-to-wrap").style.display = m === "range" ? "flex" : "none";
+});
+
+let pollTimer = null;
+$("#start-collect").addEventListener("click", async () => {
+  const mode = $("#c-mode").value;
+  const body = {
+    gallery_id: $("#c-gallery").value,
+    max_pages: +$("#c-maxpages").value,
+    with_comments: $("#c-comments").checked,
+    delay_min: +$("#c-dmin").value,
+    delay_max: +$("#c-dmax").value,
+  };
+  if (mode === "date") body.target_date = $("#c-date").value;
+  if (mode === "range") { body.date_from = $("#c-from").value; body.date_to = $("#c-to").value; }
+  const live = $("#collect-live");
+  live.className = "live run";
+  live.textContent = "수집 시작 중…";
+  const res = await fetch("/api/collect", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }).then((r) => r.json());
+  if (res.detail) { live.className = "live err"; live.textContent = "오류: " + res.detail; return; }
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(() => pollStatus(res.job_id, live), 1500);
+  pollStatus(res.job_id, live);
+});
+
+async function pollStatus(jobId, live) {
+  const st = await api("/api/collect/status?job_id=" + jobId);
+  renderRuns(st.runs);
+  const j = st.job;
+  if (!j) return;
+  if (j.status === "running") {
+    live.className = "live run";
+    live.textContent = "⏳ 수집 진행 중… (백그라운드 실행, 완료까지 시간이 걸립니다)";
+  } else {
+    clearInterval(pollTimer);
+    if (j.status === "failed") {
+      live.className = "live err";
+      live.textContent = "❌ 실패: " + (j.error || "");
+    } else {
+      const s = j.summary || {};
+      live.className = "live ok";
+      live.textContent = `✅ 완료 (${j.status}) — 대상 ${s.target_date}, 글 ${s.posts_saved}건, 댓글 ${s.comments_saved}건`;
+      initFilters(); // refresh gallery/date bounds
+    }
+  }
+}
+
+async function loadRuns() {
+  const st = await api("/api/collect/status");
+  renderRuns(st.runs);
+}
+function renderRuns(runs) {
+  const tb = $("#runs-table tbody");
+  tb.innerHTML = "";
+  (runs || []).forEach((r) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${r.gallery_id}</td><td>${r.target_date}</td>
+      <td>${(r.started_at||"").slice(5,16)}</td><td>${(r.finished_at||"").slice(5,16)}</td>
+      <td class="num">${fmt(r.posts_found)}</td><td class="num">${fmt(r.posts_saved)}</td>
+      <td class="num">${fmt(r.comments_saved)}</td>
+      <td><span class="badge">${r.status}</span></td>`;
+    tb.appendChild(tr);
+  });
+}
+
+// ---------- Posts ----------
+let pOffset = 0;
+const P_LIMIT = 50;
+function loadPosts() {
+  pOffset = 0; fetchPosts();
+}
+$("#p-search-btn").addEventListener("click", () => { pOffset = 0; fetchPosts(); });
+$("#p-search").addEventListener("keydown", (e) => { if (e.key === "Enter") { pOffset = 0; fetchPosts(); } });
+$("#p-prev").addEventListener("click", () => { if (pOffset >= P_LIMIT) { pOffset -= P_LIMIT; fetchPosts(); } });
+$("#p-next").addEventListener("click", () => { pOffset += P_LIMIT; fetchPosts(); });
+
+async function fetchPosts() {
+  const p = filt();
+  p.set("limit", P_LIMIT); p.set("offset", pOffset);
+  p.set("sort", $("#p-sort").value);
+  if ($("#p-search").value) p.set("q", $("#p-search").value);
+  if ($("#p-category").value) p.set("category", $("#p-category").value);
+  const data = await api("/api/posts?" + p);
+  const tb = $("#posts-table tbody"); tb.innerHTML = "";
+  data.items.forEach((r) => {
+    const tr = document.createElement("tr");
+    const adult = r.is_adult ? ' <span class="badge">🔞</span>' : "";
+    tr.innerHTML = `<td>${r.post_no}</td><td>${r.category||""}</td>
+      <td class="clickable">${escapeHtml(r.title)}${adult}</td>
+      <td>${escapeHtml(r.writer||"")}</td><td>${(r.posted_at||"").slice(5,16)}</td>
+      <td class="num">${fmt(r.view_count)}</td><td class="num">${fmt(r.recommend)}</td>
+      <td class="num">${fmt(r.comment_cnt)}</td>`;
+    tr.querySelector(".clickable").addEventListener("click", () => openPost(r.post_no));
+    tb.appendChild(tr);
+  });
+  const page = Math.floor(pOffset / P_LIMIT) + 1;
+  const pages = Math.max(1, Math.ceil(data.total / P_LIMIT));
+  $("#p-pageinfo").textContent = `${page} / ${pages} 페이지 · 총 ${fmt(data.total)}건`;
+}
+
+async function openPost(no) {
+  const d = await api("/api/posts/" + no);
+  const p = d.post;
+  let html = `<h2>${escapeHtml(p.title)}</h2>
+    <p class="meta">${escapeHtml(p.writer||"")} · ${p.posted_at} · 조회 ${fmt(p.view_count)} · 추천 ${fmt(p.recommend)} · 댓글 ${fmt(p.comment_cnt)}</p>
+    <div class="post-body">${p.is_adult ? "🔞 성인인증 필요 — 본문 미수집" : escapeHtml(p.body_text||"(본문 없음)")}</div>
+    <a href="${p.url}" target="_blank">원문 보기 ↗</a><h3>댓글 ${d.comments.length}</h3>`;
+  d.comments.forEach((c) => {
+    html += `<div class="cmt ${c.is_reply ? "reply" : ""}">
+      <div class="meta">${escapeHtml(c.writer||"")} ${c.writer_ip?("("+c.writer_ip+")"):""} · ${c.posted_at||""}</div>
+      <div>${escapeHtml(c.content||"")}</div></div>`;
+  });
+  $("#modal-body").innerHTML = html;
+  $("#modal").style.display = "flex";
+}
+$("#modal-close").addEventListener("click", () => ($("#modal").style.display = "none"));
+$("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") $("#modal").style.display = "none"; });
+
+// ---------- Analysis ----------
+const charts = {};
+function draw(id, cfg) {
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart($("#" + id), cfg);
+}
+const PALETTE = ["#4c8dff","#34d399","#fbbf24","#f87171","#a78bfa","#22d3ee","#fb923c","#4ade80","#e879f9","#60a5fa"];
+
+async function loadAnalysis() {
+  const q = filt().toString();
+  // overview cards
+  const ov = await api("/api/stats/overview?" + q);
+  $("#overview-cards").innerHTML = [
+    ["글", ov.posts], ["댓글", ov.comments], ["작성자", ov.unique_writers],
+    ["평균 댓글", ov.avg_comments], ["평균 조회", ov.avg_views], ["성인글", ov.adult_posts],
+  ].map(([l, v]) => `<div class="stat"><div class="val">${fmt(v)}</div><div class="lbl">${l}</div></div>`).join("");
+
+  const dateD = await api("/api/analysis/timeseries?kind=date&" + q);
+  draw("chart-date", { type: "line", data: { labels: dateD.map(d=>d.date), datasets: [{ label:"글 수", data: dateD.map(d=>d.count), borderColor: PALETTE[0], backgroundColor:"#4c8dff33", fill:true, tension:.3 }] }, options: chOpts() });
+
+  const hourD = await api("/api/analysis/timeseries?kind=hour&" + q);
+  draw("chart-hour", { type: "bar", data: { labels: hourD.map(d=>d.hour+"시"), datasets:[{ label:"글 수", data: hourD.map(d=>d.count), backgroundColor: PALETTE[5] }] }, options: chOpts() });
+
+  const wdD = await api("/api/analysis/timeseries?kind=weekday&" + q);
+  draw("chart-weekday", { type:"bar", data:{ labels: wdD.map(d=>d.weekday), datasets:[{ label:"글 수", data: wdD.map(d=>d.count), backgroundColor: PALETTE[1] }] }, options: chOpts() });
+
+  const catD = await api("/api/stats/categories?" + q);
+  draw("chart-category", { type:"doughnut", data:{ labels: catD.map(d=>d.category), datasets:[{ data: catD.map(d=>d.count), backgroundColor: PALETTE }] }, options: chOpts(true) });
+
+  loadKeywords(); loadSentiment(); loadTop(); loadWordCloud();
+}
+
+async function loadWordCloud() {
+  const q = filt(); q.set("source", $("#wc-source").value); q.set("top_n", 120);
+  const kw = await api("/api/analysis/keywords?" + q);
+  const canvas = $("#wordcloud");
+  if (!kw.length || typeof WordCloud === "undefined") {
+    canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+    return;
+  }
+  const max = kw[0].count;
+  WordCloud(canvas, {
+    list: kw.map((d) => [d.word, d.count]),
+    gridSize: 6,
+    weightFactor: (n) => Math.max(12, (n / max) * 60 + 10),
+    fontFamily: '"Apple SD Gothic Neo", "Malgun Gothic", sans-serif',
+    color: (word, weight) => PALETTE[Math.floor((weight / (max + 1)) * PALETTE.length) % PALETTE.length],
+    backgroundColor: "transparent",
+    rotateRatio: 0.4,
+    shrinkToFit: true,
+    click: (item) => { $("#rel-word").value = item[0]; loadRelated(); },
+  });
+}
+$("#wc-source").addEventListener("change", loadWordCloud);
+
+async function loadRelated() {
+  const word = $("#rel-word").value.trim();
+  const info = $("#rel-info");
+  if (!word) { info.textContent = "키워드를 입력하세요."; return; }
+  const q = filt(); q.set("word", word); q.set("source", $("#rel-source").value); q.set("top_n", 25);
+  const r = await api("/api/analysis/related?" + q);
+  if (r.detail) { info.textContent = "오류: " + r.detail; return; }
+  info.textContent = `"${r.keyword}" 등장 문서 ${fmt(r.doc_count)}개 · 함께 나온 단어 ${r.related.length}개`;
+  if (!r.related.length) {
+    info.textContent += " — 연관어를 찾지 못했습니다.";
+    if (charts["chart-related"]) charts["chart-related"].destroy();
+    return;
+  }
+  draw("chart-related", {
+    type: "bar",
+    data: { labels: r.related.map((d) => d.word), datasets: [{ label: `"${r.keyword}" 연관어`, data: r.related.map((d) => d.count), backgroundColor: PALETTE[7] }] },
+    options: { ...chOpts(), indexAxis: "y" },
+  });
+}
+$("#rel-btn").addEventListener("click", loadRelated);
+$("#rel-word").addEventListener("keydown", (e) => { if (e.key === "Enter") loadRelated(); });
+async function loadKeywords() {
+  const q = filt(); q.set("source", $("#kw-source").value); q.set("top_n", 20);
+  const kw = await api("/api/analysis/keywords?" + q);
+  draw("chart-keywords", { type:"bar", data:{ labels: kw.map(d=>d.word), datasets:[{ label:"빈도", data: kw.map(d=>d.count), backgroundColor: PALETTE[4] }] }, options: { ...chOpts(), indexAxis:"y" } });
+}
+async function loadSentiment() {
+  const q = filt(); q.set("source", $("#sent-source").value);
+  const s = await api("/api/analysis/sentiment?" + q);
+  const c = s.counts || {positive:0,negative:0,neutral:0};
+  draw("chart-sentiment", { type:"doughnut", data:{ labels:["긍정","부정","중립"], datasets:[{ data:[c.positive,c.negative,c.neutral], backgroundColor:[PALETTE[1],PALETTE[3],"#64748b"] }] }, options: chOpts(true) });
+}
+async function loadTop() {
+  const q = filt(); q.set("by", $("#top-by").value); q.set("limit", 15);
+  const rows = await api("/api/stats/top?" + q);
+  const tb = $("#top-table tbody"); tb.innerHTML = "";
+  rows.forEach((r) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="clickable">${escapeHtml(r.title)}</td><td>${escapeHtml(r.writer||"")}</td>
+      <td class="num">${fmt(r.view_count)}</td><td class="num">${fmt(r.recommend)}</td><td class="num">${fmt(r.comment_cnt)}</td>`;
+    tr.querySelector(".clickable").addEventListener("click", () => openPost(r.post_no));
+    tb.appendChild(tr);
+  });
+}
+$("#kw-source").addEventListener("change", loadKeywords);
+$("#sent-source").addEventListener("change", loadSentiment);
+$("#top-by").addEventListener("change", loadTop);
+
+function chOpts(legend) {
+  return { responsive:true, plugins:{ legend:{ display: !!legend, labels:{ color:"#e6ecf7" } } },
+    scales: legend ? {} : { x:{ ticks:{ color:"#8b98b0" }, grid:{ color:"#2d3a52" } }, y:{ ticks:{ color:"#8b98b0" }, grid:{ color:"#2d3a52" } } } };
+}
+function escapeHtml(s) { return (s||"").replace(/[&<>"']/g, (m) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m])); }
+
+// ---------- Boot ----------
+initFilters().then(loadRuns);
