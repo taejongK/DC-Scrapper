@@ -8,9 +8,8 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from analysis import db as adb
-from analysis import keywords, sentiment, stats, timeseries
+from analysis import keywords, llm, llm_report, sentiment, stats, timeseries, trends
 from dc_scraper import config as scfg
-from dc_scraper.db import Database
 
 from .jobs import manager
 
@@ -97,13 +96,17 @@ def list_posts(
 ) -> dict:
     clauses, params = [], []
     if gallery_id:
-        clauses.append("gallery_id = ?"); params.append(gallery_id)
+        clauses.append("gallery_id = ?")
+        params.append(gallery_id)
     if date_from:
-        clauses.append("substr(posted_at,1,10) >= ?"); params.append(date_from)
+        clauses.append("substr(posted_at,1,10) >= ?")
+        params.append(date_from)
     if date_to:
-        clauses.append("substr(posted_at,1,10) <= ?"); params.append(date_to)
+        clauses.append("substr(posted_at,1,10) <= ?")
+        params.append(date_to)
     if category:
-        clauses.append("category = ?"); params.append(category)
+        clauses.append("category = ?")
+        params.append(category)
     if q:
         clauses.append("(title LIKE ? OR body_text LIKE ?)")
         params += [f"%{q}%", f"%{q}%"]
@@ -161,20 +164,42 @@ def api_categories(gallery_id: str | None = None, date_from: str | None = None,
 
 
 @router.get("/analysis/timeseries")
-def api_timeseries(kind: str = Query("date", pattern="^(date|hour|weekday)$"),
+def api_timeseries(kind: str = Query("date", pattern="^(date|hour|weekday|sentiment|engagement)$"),
                    gallery_id: str | None = None, date_from: str | None = None,
                    date_to: str | None = None, q: str | None = None) -> list[dict]:
     f = _filters(gallery_id, date_from, date_to, q=q)
     return {"date": timeseries.by_date, "hour": timeseries.by_hour,
-            "weekday": timeseries.by_weekday}[kind](db_path(), **f)
+            "weekday": timeseries.by_weekday,
+            "sentiment": timeseries.sentiment_by_date,
+            "engagement": timeseries.engagement_by_date}[kind](db_path(), **f)
+
+
+@router.get("/analysis/heatmap")
+def api_heatmap(gallery_id: str | None = None, date_from: str | None = None,
+                date_to: str | None = None, q: str | None = None) -> dict:
+    """Weekday × hour activity matrix."""
+    return timeseries.heatmap(db_path(), **_filters(gallery_id, date_from, date_to, q=q))
+
+
+@router.get("/analysis/bursts")
+def api_bursts(date: str | None = None, source: str = "post", top_n: int = 20,
+               min_count: int = 2, gallery_id: str | None = None,
+               date_from: str | None = None, date_to: str | None = None) -> dict:
+    """Trending / newly-appearing keywords for a day vs. the preceding days."""
+    return trends.daily_bursts(db_path(), date=date, source=source, top_n=top_n,
+                               min_count=min_count,
+                               **_filters(gallery_id, date_from, date_to))
 
 
 @router.get("/analysis/keywords")
-def api_keywords(source: str = "all", top_n: int = 50, gallery_id: str | None = None,
-                 date_from: str | None = None, date_to: str | None = None,
-                 q: str | None = None) -> list[dict]:
-    return keywords.word_frequency(db_path(), source=source, top_n=top_n,
-                                   **_filters(gallery_id, date_from, date_to, q=q))
+def api_keywords(source: str = "all", top_n: int = 50,
+                 method: str = Query("count", pattern="^(count|salient)$"),
+                 gallery_id: str | None = None, date_from: str | None = None,
+                 date_to: str | None = None, q: str | None = None) -> list[dict]:
+    """Keyword list. ``method=count`` = raw frequency; ``salient`` = TF-IDF."""
+    f = _filters(gallery_id, date_from, date_to, q=q)
+    fn = keywords.salient_words if method == "salient" else keywords.word_frequency
+    return fn(db_path(), source=source, top_n=top_n, **f)
 
 
 @router.get("/analysis/related")
@@ -193,6 +218,38 @@ def api_sentiment(source: str = "comment", gallery_id: str | None = None,
                   q: str | None = None) -> dict:
     return sentiment.sentiment_distribution(db_path(), source=source,
                                             **_filters(gallery_id, date_from, date_to, q=q))
+
+
+@router.get("/analysis/llm_status")
+def api_llm_status() -> dict:
+    """Whether LLM deep-analysis is usable (key + SDK present)."""
+    return llm.status()
+
+
+class LLMReportRequest(BaseModel):
+    q: str
+    source: str = "post_comment"          # post_comment | post
+    refresh: bool = False
+    max_posts: int = 60
+    gallery_id: str | None = None
+    date_from: str | None = None
+    date_to: str | None = None
+
+
+@router.post("/analysis/llm_report")
+def api_llm_report(req: LLMReportRequest) -> dict:
+    """LLM qualitative report over posts (+comments) containing a keyword.
+
+    Synchronous: may take a while on large keywords, but results are cached, so
+    re-requests are instant. Use ``refresh=true`` to bypass the cache.
+    """
+    if not req.q or not req.q.strip():
+        raise HTTPException(400, "q (키워드) is required")
+    if req.source not in ("post_comment", "post"):
+        raise HTTPException(400, "source must be post_comment or post")
+    f = _filters(req.gallery_id, req.date_from, req.date_to)
+    return llm_report.keyword_report(db_path(), keyword=req.q, source=req.source,
+                                     refresh=req.refresh, max_posts=req.max_posts, **f)
 
 
 @router.get("/meta/galleries")

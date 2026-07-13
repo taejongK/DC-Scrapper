@@ -14,6 +14,14 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# .env 자동 로드 (있으면). API 키 등 로컬 환경변수를 export 한다 (.env 값이 적용됨).
+if [[ -f .env ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source ./.env
+  set +a
+fi
+
 VENV=".venv"
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8000}"
@@ -41,11 +49,11 @@ if [[ ! -d "$VENV" ]]; then
 fi
 PY="$VENV/bin/python"
 
-# 의존성 설치 (--setup 또는 fastapi 미설치 시)
-if [[ "$DO_SETUP" == "1" ]] || ! "$PY" -c "import fastapi, pandas, kiwipiepy" 2>/dev/null; then
+# 의존성 설치 (--setup 또는 핵심 패키지 미설치 시)
+if [[ "$DO_SETUP" == "1" ]] || ! "$PY" -c "import fastapi, pandas, kiwipiepy, anthropic" 2>/dev/null; then
   echo "▶ 의존성 설치 중…"
   "$PY" -m pip install -q --upgrade pip
-  "$PY" -m pip install -q -e ".[web,analysis]"
+  "$PY" -m pip install -q -e ".[web,analysis,llm]"
 fi
 
 # DB 존재 확인 (경고만)
@@ -53,6 +61,13 @@ if [[ ! -f "$DB" ]]; then
   echo "⚠ DB 파일이 없습니다: $DB"
   echo "  먼저 수집을 실행하거나 대시보드의 '수집' 탭에서 데이터를 모으세요:"
   echo "    $PY -m dc_scraper --db-path $DB --verbose"
+fi
+
+# LLM 심층분석 키 안내 (선택 기능)
+if [[ -z "${OPENROUTER_API_KEY:-}" && -z "${ANTHROPIC_API_KEY:-}" ]]; then
+  echo "ℹ LLM 심층분석을 쓰려면 API 키를 설정하세요 (미설정 시 다른 분석은 정상 동작):"
+  echo "    export OPENROUTER_API_KEY=sk-or-v1-...   # 권장. 모델: export DC_LLM_MODEL=anthropic/claude-sonnet-5"
+  echo "    export ANTHROPIC_API_KEY=sk-ant-...      # 또는 Anthropic 직접"
 fi
 
 RELOAD_FLAG=""
