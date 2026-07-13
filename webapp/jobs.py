@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import threading
 import uuid
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 
 from dc_scraper.fetch import Fetcher
 from dc_scraper.scraper import collect

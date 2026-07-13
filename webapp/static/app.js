@@ -206,6 +206,10 @@ async function loadAnalysis() {
   draw("chart-category", { type:"doughnut", data:{ labels: catD.map(d=>d.category), datasets:[{ data: catD.map(d=>d.count), backgroundColor: PALETTE }] }, options: chOpts(true) });
 
   loadKeywords(); loadSentiment(); loadTop(); loadWordCloud();
+  loadBursts(); loadSentTrend(); loadHeatmap();
+  // prefill the LLM keyword box from the filter's keyword, if any
+  const fq = filt().get("q");
+  if (fq && !$("#llm-word").value) $("#llm-word").value = fq;
 }
 
 async function loadWordCloud() {
@@ -253,9 +257,138 @@ async function loadRelated() {
 $("#rel-btn").addEventListener("click", loadRelated);
 $("#rel-word").addEventListener("keydown", (e) => { if (e.key === "Enter") loadRelated(); });
 async function loadKeywords() {
+  const method = $("#kw-method").value;
   const q = filt(); q.set("source", $("#kw-source").value); q.set("top_n", 20);
+  q.set("method", method);
   const kw = await api("/api/analysis/keywords?" + q);
-  draw("chart-keywords", { type:"bar", data:{ labels: kw.map(d=>d.word), datasets:[{ label:"빈도", data: kw.map(d=>d.count), backgroundColor: PALETTE[4] }] }, options: { ...chOpts(), indexAxis:"y" } });
+  const useScore = method === "salient";
+  draw("chart-keywords", { type:"bar", data:{ labels: kw.map(d=>d.word),
+    datasets:[{ label: useScore ? "특징도(TF-IDF)" : "빈도",
+      data: kw.map(d => useScore ? d.score : d.count), backgroundColor: PALETTE[4] }] },
+    options: { ...chOpts(), indexAxis:"y" } });
+}
+
+// ---------- LLM deep analysis ----------
+let llmReady = false;
+async function initLLM() {
+  const st = await api("/api/analysis/llm_status");
+  llmReady = st.available;
+  $("#llm-model").textContent = st.available ? `(${st.model})` : "";
+  $("#llm-status").innerHTML = st.available ? "" :
+    `⚠️ LLM 미설정 — ${escapeHtml(st.reason || "")}. ` +
+    `<code>ANTHROPIC_API_KEY</code> 설정 후 서버를 재시작하세요.`;
+  $("#llm-btn").disabled = !st.available;
+}
+async function runLLM() {
+  const word = $("#llm-word").value.trim();
+  const status = $("#llm-status");
+  const box = $("#llm-report");
+  if (!word) { status.textContent = "키워드를 입력하세요."; return; }
+  if (!llmReady) { return; }
+  status.innerHTML = `⏳ "<b>${escapeHtml(word)}</b>" 관련 글·댓글을 LLM으로 분석 중… (수십 초 걸릴 수 있음)`;
+  box.innerHTML = "";
+  const f = filt();
+  const body = {
+    q: word, source: $("#llm-source").value, refresh: $("#llm-refresh").checked,
+    gallery_id: f.get("gallery_id") || null,
+    date_from: f.get("date_from") || null, date_to: f.get("date_to") || null,
+  };
+  let r;
+  try {
+    r = await fetch("/api/analysis/llm_report", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((x) => x.json());
+  } catch (e) { status.innerHTML = "❌ 요청 실패: " + escapeHtml(String(e)); return; }
+  if (r.detail) { status.innerHTML = "❌ " + escapeHtml(r.detail); return; }
+  if (r.error) { status.innerHTML = "⚠️ " + escapeHtml(r.error); return; }
+  renderLLM(r);
+}
+function renderLLM(r) {
+  const tag = r.cached ? '<span class="badge">캐시</span>' :
+    (r.truncated ? `<span class="badge">상위 ${r.analyzed_posts}/${r.post_count}글 분석</span>` :
+      `<span class="badge">${r.analyzed_posts}글 분석</span>`);
+  $("#llm-status").innerHTML =
+    `✅ "<b>${escapeHtml(r.keyword)}</b>" 분석 완료 · 매칭 ${fmt(r.post_count)}글 ${tag}`;
+  if (r.empty) { $("#llm-report").innerHTML = `<p class="note">${escapeHtml(r.overview||"")}</p>`; return; }
+  // evidence links: [#123] chips linking back to the source post
+  const src = (sources) => (sources && sources.length)
+    ? ' <span class="src">' + sources.map((s) => s.url
+        ? `<a href="${s.url}" target="_blank" title="${escapeHtml(s.title||"")}">#${s.post_no}</a>`
+        : `<span>#${s.post_no}</span>`).join("") + "</span>"
+    : "";
+  const list = (arr) => (arr && arr.length)
+    ? "<ul>" + arr.map((x) => `<li>${escapeHtml(x.text || "")}${src(x.sources)}</li>`).join("") + "</ul>"
+    : '<p class="note">—</p>';
+  const themes = (r.themes || []).map((t) =>
+    `<div class="theme"><b>${escapeHtml(t.title || "")}</b>${src(t.sources)}` +
+    `<div>${escapeHtml(t.detail || "")}</div></div>`).join("");
+  const quotes = (r.quotes || []).map((q) => {
+    const cite = q.url ? `<a href="${q.url}" target="_blank">#${q.post_no} ↗</a>` :
+      (q.post_no != null ? `#${q.post_no}` : "");
+    return `<div class="quote">“${escapeHtml(q.quote || "")}” <span class="qcite">${cite}</span></div>`;
+  }).join("");
+  $("#llm-report").innerHTML = `
+    <div class="llm-overview">${escapeHtml(r.overview || "")}</div>
+    ${r.mood ? `<p class="llm-mood">🌡️ ${escapeHtml(r.mood)}</p>` : ""}
+    ${themes ? `<h3 class="sub">📌 주요 주제</h3>${themes}` : ""}
+    <div class="grid-2">
+      <div><h3 class="sub">👍 긍정 평가</h3>${list(r.positives)}</div>
+      <div><h3 class="sub">👎 부정 평가</h3>${list(r.negatives)}</div>
+    </div>
+    ${(r.issues && r.issues.length) ? `<h3 class="sub">⚔️ 쟁점</h3>${list(r.issues)}` : ""}
+    ${quotes ? `<h3 class="sub">💬 대표 반응</h3>${quotes}` : ""}`;
+}
+$("#llm-btn").addEventListener("click", runLLM);
+$("#llm-word").addEventListener("keydown", (e) => { if (e.key === "Enter") runLLM(); });
+
+// ---------- Issue bursts ----------
+async function loadBursts() {
+  const q = filt(); q.set("top_n", 12); q.set("min_count", 2);
+  if ($("#burst-date").value) q.set("date", $("#burst-date").value);
+  const b = await api("/api/analysis/bursts?" + q);
+  const info = $("#burst-info");
+  if (!b || !b.date) { info.textContent = "데이터가 없습니다."; $("#burst-up").innerHTML = ""; $("#burst-new").innerHTML = ""; return; }
+  const base = b.baseline_days ? `기준: ${b.baseline_from}~${b.baseline_to} (${b.baseline_days}일)` : "기준일 없음(첫날)";
+  info.textContent = `${b.date} · ${base}`;
+  const rowsUp = (b.bursts || []).map((x) =>
+    `<div class="brow"><span class="bw clickable">${escapeHtml(x.word)}</span>
+       <span class="bmeta">×${x.count} · ${x.burst}배${x.is_new ? " 🆕" : ""}</span></div>`).join("");
+  const rowsNew = (b.new_keywords || []).map((x) =>
+    `<div class="brow"><span class="bw clickable">${escapeHtml(x.word)}</span>
+       <span class="bmeta">×${x.count}</span></div>`).join("");
+  $("#burst-up").innerHTML = rowsUp || '<p class="note">급상승 없음</p>';
+  $("#burst-new").innerHTML = rowsNew || '<p class="note">신규 없음</p>';
+  // click a word -> related-word analysis
+  $$("#burst-up .bw, #burst-new .bw").forEach((el) =>
+    el.addEventListener("click", () => { $("#rel-word").value = el.textContent; loadRelated(); }));
+}
+$("#burst-date").addEventListener("change", loadBursts);
+
+// ---------- Sentiment trend ----------
+async function loadSentTrend() {
+  const q = filt().toString();
+  const rows = await api("/api/analysis/timeseries?kind=sentiment&" + q);
+  draw("chart-sent-trend", { type: "line",
+    data: { labels: rows.map(d=>d.date), datasets: [{ label: "평균 감성점수", data: rows.map(d=>d.mean_score),
+      borderColor: PALETTE[2], backgroundColor: "#fbbf2433", fill: true, tension: .3 }] },
+    options: { ...chOpts(), scales: { ...chOpts().scales, y: { suggestedMin: -1, suggestedMax: 1, ticks:{ color:"#8b98b0" }, grid:{ color:"#2d3a52" } } } } });
+}
+
+// ---------- Heatmap ----------
+async function loadHeatmap() {
+  const q = filt().toString();
+  const hm = await api("/api/analysis/heatmap?" + q);
+  const max = Math.max(1, ...hm.matrix.flat());
+  let html = '<table class="hm"><thead><tr><th></th>' +
+    Array.from({length:24}, (_,h) => `<th>${h}</th>`).join("") + "</tr></thead><tbody>";
+  hm.weekdays.forEach((wd, w) => {
+    html += `<tr><th>${wd}</th>` + hm.matrix[w].map((v) => {
+      const a = v === 0 ? 0 : 0.15 + 0.85 * (v / max);
+      return `<td title="${wd} ${v}건" style="background:rgba(76,141,255,${a.toFixed(3)})">${v || ""}</td>`;
+    }).join("") + "</tr>";
+  });
+  $("#heatmap-wrap").innerHTML = html + "</tbody></table>";
 }
 async function loadSentiment() {
   const q = filt(); q.set("source", $("#sent-source").value);
@@ -276,6 +409,7 @@ async function loadTop() {
   });
 }
 $("#kw-source").addEventListener("change", loadKeywords);
+$("#kw-method").addEventListener("change", loadKeywords);
 $("#sent-source").addEventListener("change", loadSentiment);
 $("#top-by").addEventListener("change", loadTop);
 
@@ -287,3 +421,4 @@ function escapeHtml(s) { return (s||"").replace(/[&<>"']/g, (m) => ({ "&":"&amp;
 
 // ---------- Boot ----------
 initFilters().then(loadRuns);
+initLLM();

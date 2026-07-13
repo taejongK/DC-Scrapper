@@ -45,3 +45,73 @@ def by_weekday(db_path: str | Path = db.DEFAULT_DB, **filters) -> list[dict]:
     for i, w in enumerate(_WEEKDAYS_KO):
         result[i]["count"] = int(counts.get(i, 0))
     return result
+
+
+def heatmap(db_path: str | Path = db.DEFAULT_DB, **filters) -> dict:
+    """Weekday × hour activity matrix (post counts).
+
+    Returns ``{"weekdays": [...7...], "matrix": [[...24...] × 7]}`` where
+    ``matrix[w][h]`` is the number of posts written on weekday ``w`` at hour
+    ``h``. Handy for spotting the community's active windows at a glance.
+    """
+    matrix = [[0] * 24 for _ in range(7)]
+    posts = db.load_posts(db_path, **filters)
+    if not posts.empty:
+        posts = _prep(posts, "posted_at")
+        g = posts.groupby([posts["_dt"].dt.weekday, posts["_dt"].dt.hour]).size()
+        for (wd, hr), n in g.items():
+            matrix[int(wd)][int(hr)] = int(n)
+    return {"weekdays": _WEEKDAYS_KO, "matrix": matrix}
+
+
+def engagement_by_date(db_path: str | Path = db.DEFAULT_DB, **filters) -> list[dict]:
+    """Per-day engagement: post count and total/avg views, recommends, comments."""
+    posts = db.load_posts(db_path, **filters)
+    if posts.empty:
+        return []
+    posts = _prep(posts, "posted_at")
+    out: list[dict] = []
+    for day, grp in posts.groupby(posts["_dt"].dt.date):
+        n = len(grp)
+        out.append({
+            "date": str(day),
+            "posts": int(n),
+            "views": int(grp["view_count"].fillna(0).sum()),
+            "recommend": int(grp["recommend"].fillna(0).sum()),
+            "comments": int(grp["comment_cnt"].fillna(0).sum()),
+            "avg_views": round(float(grp["view_count"].fillna(0).mean()), 1),
+            "avg_comments": round(float(grp["comment_cnt"].fillna(0).mean()), 2),
+        })
+    return out
+
+
+def sentiment_by_date(db_path: str | Path = db.DEFAULT_DB, **filters) -> list[dict]:
+    """Per-day sentiment trend over posts (title + body), lexicon-based.
+
+    Returns each day's positive/negative/neutral counts and the mean sentiment
+    score, so the dashboard can plot how the mood shifts over time.
+    """
+    from .sentiment import score_text  # local import avoids a module cycle
+
+    posts = db.load_posts(db_path, exclude_adult=True, **filters)
+    if posts.empty:
+        return []
+    posts = _prep(posts, "posted_at")
+    out: list[dict] = []
+    for day, grp in posts.groupby(posts["_dt"].dt.date):
+        counts = {"positive": 0, "negative": 0, "neutral": 0}
+        total_score = 0.0
+        for _, row in grp.iterrows():
+            text = f"{row.get('title') or ''} {row.get('body_text') or ''}"
+            res = score_text(text)
+            counts[res["label"]] += 1
+            total_score += res["score_norm"]  # bounded ~[-1,1] for the trend axis
+        n = len(grp) or 1
+        out.append({
+            "date": str(day),
+            "positive": counts["positive"],
+            "negative": counts["negative"],
+            "neutral": counts["neutral"],
+            "mean_score": round(total_score / n, 3),
+        })
+    return out

@@ -1,4 +1,3 @@
-import os
 
 import pytest
 from fastapi.testclient import TestClient
@@ -94,6 +93,44 @@ def test_keyword_filtered_sentiment(client):
     r = client.get("/api/analysis/sentiment?source=comment&q=신드롬")
     assert r.status_code == 200
     assert r.json()["total"] == 2   # only post 1's comments
+
+
+def test_keywords_salient_method(client):
+    r = client.get("/api/analysis/keywords?method=salient&source=post&top_n=10")
+    assert r.status_code == 200
+    body = r.json()
+    assert isinstance(body, list)
+    if body:
+        assert {"word", "count", "score"} <= set(body[0])
+
+
+def test_heatmap_endpoint(client):
+    r = client.get("/api/analysis/heatmap")
+    assert r.status_code == 200
+    hm = r.json()
+    assert len(hm["matrix"]) == 7 and len(hm["matrix"][0]) == 24
+
+
+def test_bursts_endpoint(client):
+    r = client.get("/api/analysis/bursts?date=2026-07-09&min_count=1")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["date"] == "2026-07-09"
+    assert "bursts" in body and "new_keywords" in body
+
+
+def test_timeseries_sentiment_kind(client):
+    r = client.get("/api/analysis/timeseries?kind=sentiment")
+    assert r.status_code == 200
+    rows = r.json()
+    assert all("mean_score" in row for row in rows)
+
+
+def test_timeseries_engagement_kind(client):
+    r = client.get("/api/analysis/timeseries?kind=engagement")
+    assert r.status_code == 200
+    rows = {row["date"]: row for row in r.json()}
+    assert rows["2026-07-08"]["views"] == 150
 
 
 def test_collect_validation(client):

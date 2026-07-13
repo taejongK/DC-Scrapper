@@ -89,19 +89,41 @@
   <!-- ===== 분석 ===== -->
   <section id="tab-analysis" class="panel">
     <div id="overview-cards" class="cards"></div>
+
+    <div class="card llm-card">
+      <h2>🧠 LLM 심층 분석 <span id="llm-model" class="note"></span></h2>
+      <p class="note">키워드가 들어간 글·댓글을 LLM으로 읽어 <b>무슨 내용·평가·쟁점</b>이 있는지 정리하고, 각 항목마다 <b>근거 글 링크</b>를 붙입니다. 여러 키워드는 <code>or</code> 또는 <code>,</code>로 구분(하나라도 포함 시 매칭).</p>
+      <div class="toolbar">
+        <input id="llm-word" placeholder="키워드 (예: 에덴  ·  여러 개: 에덴 or 오브, 젬)" />
+        <select id="llm-source" class="mini" style="margin-left:0">
+          <option value="post_comment">글+댓글</option>
+          <option value="post">글만</option>
+        </select>
+        <label class="check"><input type="checkbox" id="llm-refresh" /> 새로 분석</label>
+        <button id="llm-btn" class="primary">분석</button>
+      </div>
+      <div id="llm-status" class="note"></div>
+      <div id="llm-report"></div>
+    </div>
+
     <div class="grid-2">
       <div class="card"><h2>📈 날짜별 글 수</h2><canvas id="chart-date"></canvas></div>
       <div class="card"><h2>🕐 시간대별 활동</h2><canvas id="chart-hour"></canvas></div>
       <div class="card"><h2>📅 요일별 활동</h2><canvas id="chart-weekday"></canvas></div>
       <div class="card"><h2>🏷️ 말머리 분포</h2><canvas id="chart-category"></canvas></div>
       <div class="card">
-        <h2>🔤 키워드 빈도
+        <h2>🔤 키워드
+          <select id="kw-method" class="mini">
+            <option value="salient">특징어(TF-IDF)</option>
+            <option value="count">단순 빈도</option>
+          </select>
           <select id="kw-source" class="mini">
             <option value="all">전체</option><option value="title">제목</option>
             <option value="body">본문</option><option value="comment">댓글</option>
           </select>
         </h2>
         <canvas id="chart-keywords"></canvas>
+        <p class="note">특징어: 흔한 단어를 눌러 이 갤/기간에 <b>유독 튀는 단어</b>를 상위로</p>
       </div>
       <div class="card">
         <h2>💬 감성 분포
@@ -113,6 +135,28 @@
         <p class="note">사전 기반 baseline · 슬랭 많은 글은 중립으로 분류될 수 있음</p>
       </div>
     </div>
+    <div class="grid-2">
+      <div class="card">
+        <h2>🔥 이슈 버스트
+          <input type="date" id="burst-date" class="mini" />
+        </h2>
+        <p id="burst-info" class="note"></p>
+        <div class="burst-cols">
+          <div><h3 class="sub">📈 급상승</h3><div id="burst-up"></div></div>
+          <div><h3 class="sub">✨ 신규 등장</h3><div id="burst-new"></div></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>🌡️ 감성 추이 <span class="note">(글 기준, 평균 점수)</span></h2>
+        <canvas id="chart-sent-trend"></canvas>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>🗓️ 요일 × 시간 활동 히트맵</h2>
+      <div id="heatmap-wrap" class="heatmap"></div>
+    </div>
+
     <div class="card">
       <h2>☁️ 워드클라우드
         <select id="wc-source" class="mini">

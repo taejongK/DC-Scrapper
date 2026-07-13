@@ -1,4 +1,4 @@
-from analysis import keywords, sentiment, stats, timeseries
+from analysis import keywords, sentiment, stats, timeseries, trends
 
 
 def test_overview(sample_db):
@@ -50,6 +50,15 @@ def test_keyword_filter_no_match(sample_db):
     assert stats.overview(sample_db, q="없는키워드zzz")["posts"] == 0
 
 
+def test_keyword_filter_list_or(sample_db):
+    from analysis import db as adb
+    # "신드롬"(post1) OR "젬"(post2) -> 2 posts
+    df = adb.load_posts(sample_db, q=["신드롬", "젬"])
+    assert set(df["post_no"]) == {1, 2}
+    # single-element list behaves like the string form
+    assert set(adb.load_posts(sample_db, q=["신드롬"])["post_no"]) == {1}
+
+
 def test_timeseries_by_date(sample_db):
     d = {r["date"]: r["count"] for r in timeseries.by_date(sample_db)}
     assert d["2026-07-08"] == 2 and d["2026-07-09"] == 2
@@ -99,6 +108,76 @@ def test_related_words_empty_keyword(sample_db):
 def test_related_words_absent_keyword(sample_db):
     r = keywords.related_words(sample_db, keyword="존재하지않는단어", source="all")
     assert r["doc_count"] == 0 and r["related"] == []
+
+
+def test_salient_words_returns_scores(sample_db):
+    sal = keywords.salient_words(sample_db, source="post", top_n=20)
+    assert sal, "expected at least one salient term"
+    top = sal[0]
+    assert {"word", "count", "score"} <= set(top)
+    # sorted by score descending
+    scores = [s["score"] for s in sal]
+    assert scores == sorted(scores, reverse=True)
+
+
+def test_extract_terms_bigrams():
+    terms = keywords.extract_terms("에덴 캐릭터 업데이트")
+    # adjacent content nouns form bigrams, unigrams kept too
+    assert "에덴" in terms and "캐릭터" in terms
+    assert "에덴 캐릭터" in terms
+
+
+def test_related_words_pmi_ranks_distinctive(sample_db):
+    # 신드롬 co-occurs only with 에덴 (rare) -> high PMI, must appear
+    r = keywords.related_words(sample_db, keyword="에덴", source="all", top_n=10)
+    words = {x["word"] for x in r["related"]}
+    assert "신드롬" in words
+    assert all("score" in x for x in r["related"])
+
+
+def test_heatmap_shape(sample_db):
+    hm = timeseries.heatmap(sample_db)
+    assert hm["weekdays"] == ["월", "화", "수", "목", "금", "토", "일"]
+    assert len(hm["matrix"]) == 7 and all(len(r) == 24 for r in hm["matrix"])
+    # post 1: 2026-07-08 (Wed) 09:00 -> matrix[2][9] >= 1
+    assert hm["matrix"][2][9] >= 1
+
+
+def test_engagement_by_date(sample_db):
+    eng = {e["date"]: e for e in timeseries.engagement_by_date(sample_db)}
+    assert eng["2026-07-08"]["posts"] == 2
+    assert eng["2026-07-08"]["views"] == 150      # 100 + 50
+    assert eng["2026-07-08"]["recommend"] == 11   # 10 + 1
+
+
+def test_sentiment_by_date(sample_db):
+    rows = {r["date"]: r for r in timeseries.sentiment_by_date(sample_db)}
+    # 2026-07-08: post1 positive, post2 negative
+    assert rows["2026-07-08"]["positive"] >= 1
+    assert rows["2026-07-08"]["negative"] >= 1
+    assert "mean_score" in rows["2026-07-08"]
+
+
+def test_trends_available_dates(sample_db):
+    assert trends.available_dates(sample_db) == ["2026-07-08", "2026-07-09"]
+
+
+def test_trends_daily_bursts_new_keywords(sample_db):
+    # 2026-07-09 has post 4 ("질문 있어요 / 이거 어떻게 설정하나요"); 07-08 is baseline
+    b = trends.daily_bursts(sample_db, date="2026-07-09", min_count=1)
+    assert b["date"] == "2026-07-09"
+    assert b["baseline_days"] == 1
+    new = {x["word"] for x in b["new_keywords"]}
+    assert "질문" in new or "설정" in new
+    # every burst entry carries the expected shape
+    assert all({"word", "count", "burst", "is_new"} <= set(x) for x in b["bursts"])
+
+
+def test_trends_empty_baseline_first_day(sample_db):
+    b = trends.daily_bursts(sample_db, date="2026-07-08", min_count=1)
+    assert b["baseline_days"] == 0
+    # with no baseline, every term is "new"
+    assert all(x["is_new"] for x in b["bursts"])
 
 
 def test_sentiment_score_text():

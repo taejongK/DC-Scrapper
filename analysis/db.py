@@ -33,10 +33,28 @@ def _where(gallery_id: str | None, date_from: str | None, date_to: str | None,
     if exclude_adult:
         clauses.append("COALESCE(is_adult,0) = 0")
     if q:
-        clauses.append("(title LIKE ? OR body_text LIKE ?)")
-        params += [f"%{q}%", f"%{q}%"]
+        clause, qparams = _keyword_clause(q, "title", "body_text")
+        clauses.append(clause)
+        params += qparams
     sql = (" WHERE " + " AND ".join(clauses)) if clauses else ""
     return sql, params
+
+
+def _keyword_clause(q, title_col: str, body_col: str) -> tuple[str, list]:
+    """Build a LIKE clause for one keyword or an OR of several.
+
+    ``q`` may be a string (single keyword) or a list/tuple of keywords, in which
+    case a post matches if ANY keyword appears in its title or body.
+    """
+    kws = [q] if isinstance(q, str) else list(q)
+    kws = [k for k in kws if str(k).strip()]
+    if not kws:
+        return "1=1", []
+    parts, params = [], []
+    for k in kws:
+        parts.append(f"({title_col} LIKE ? OR {body_col} LIKE ?)")
+        params += [f"%{k}%", f"%{k}%"]
+    return "(" + " OR ".join(parts) + ")", params
 
 
 def load_posts(
@@ -85,8 +103,9 @@ def load_comments(
         clauses.append("substr(p.posted_at,1,10) <= ?")
         params.append(date_to)
     if q:
-        clauses.append("(p.title LIKE ? OR p.body_text LIKE ?)")
-        params += [f"%{q}%", f"%{q}%"]
+        clause, qparams = _keyword_clause(q, "p.title", "p.body_text")
+        clauses.append(clause)
+        params += qparams
     where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
     sql = (
         "SELECT c.* FROM comments c JOIN posts p ON p.post_no = c.post_no" + where
