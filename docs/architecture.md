@@ -60,7 +60,7 @@ webapp/                [레이어 4] 웹 대시보드 (FastAPI + 순수 JS)
   api.py                 REST 라우트 (/api/*) — 수집제어·글조회·분석·LLM
   jobs.py                JobManager — collect()를 백그라운드 스레드로 실행
   static/
-    index.html           탭 3개(수집/글목록/분석) + 필터바
+    index.html           탭 3개(수집/글목록/분석) + 공통 필터바(목록·분석 탭에서만 표시)
     app.js               바닐라 JS — fetch·차트(Chart.js)·워드클라우드·LLM 렌더
     style.css            다크 테마
 

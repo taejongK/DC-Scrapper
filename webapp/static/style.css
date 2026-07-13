@@ -118,3 +118,8 @@ table.hm tbody th { text-align: right; padding-right: 8px; }
   background: var(--panel); border: 1px solid var(--border); color: var(--accent); text-decoration: none; }
 .src a:hover { border-color: var(--accent); }
 #llm-report .theme > b + .src { margin-left: 6px; }
+
+/* ---- filter bar: scoped to 목록/분석 tabs only ---- */
+.filters[hidden] { display: none; }   /* override .filters display:flex */
+.filter-scope { font-size: 12px; font-weight: 600; color: var(--accent);
+  align-self: center; padding-right: 4px; border-right: 1px solid var(--border); margin-right: 4px; }
