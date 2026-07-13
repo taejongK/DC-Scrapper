@@ -15,12 +15,17 @@ const filt = () => {
 const fmt = (n) => (n == null ? "-" : Number(n).toLocaleString());
 
 // ---------- Tabs ----------
+// The top filter bar only scopes 글목록/분석, so it's shown only on those tabs.
+function syncFilterBar(tab) {
+  $("#filter-bar").hidden = (tab !== "posts" && tab !== "analysis");
+}
 $$(".tab").forEach((t) =>
   t.addEventListener("click", () => {
     $$(".tab").forEach((x) => x.classList.remove("active"));
     $$(".panel").forEach((x) => x.classList.remove("active"));
     t.classList.add("active");
     $("#tab-" + t.dataset.tab).classList.add("active");
+    syncFilterBar(t.dataset.tab);
     if (t.dataset.tab === "analysis") loadAnalysis();
     if (t.dataset.tab === "posts") loadPosts();
     if (t.dataset.tab === "collect") loadRuns();
