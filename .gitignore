@@ -8,6 +8,11 @@ __pycache__/
 test_run.db*
 /tmp/
 
+# 시크릿 / 로컬 환경변수 (API 키 등 — 절대 커밋 금지)
+.env
+.env.*
+!.env.example
+
 # 로컬 에이전트 도구 / 세션 상태 (개인 환경 종속)
 .omc/
 .claude/settings.local.json
