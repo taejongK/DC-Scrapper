@@ -147,3 +147,49 @@ class Database:
             "SELECT COUNT(*) FROM posts WHERE posted_at LIKE ?", (f"{date_prefix}%",)
         )
         return int(cur.fetchone()[0])
+
+    # -- deletion reflection -------------------------------------------------
+    def prune_comments(self, post_no: int, kept_comment_nos: list[int]) -> int:
+        """Delete stored comments of ``post_no`` that are no longer present.
+
+        ``kept_comment_nos`` is the set of comment numbers seen in the latest
+        fetch; anything else for this post is assumed removed upstream and is
+        deleted. Call this only when comments were actually re-fetched, never on
+        an adult/skipped post (an empty ``kept`` list would wipe the thread).
+        Returns the number of rows deleted.
+        """
+        kept = [int(x) for x in kept_comment_nos if x is not None]
+        if kept:
+            placeholders = ", ".join("?" * len(kept))
+            cur = self.conn.execute(
+                f"DELETE FROM comments WHERE post_no=? AND comment_no NOT IN ({placeholders})",
+                [post_no, *kept],
+            )
+        else:
+            cur = self.conn.execute(
+                "DELETE FROM comments WHERE post_no=?", (post_no,)
+            )
+        return cur.rowcount
+
+    def post_nos_in_range(self, gallery_id: str, lo: str, hi: str) -> set[int]:
+        """post_no set for ``gallery_id`` whose posting date is within [lo, hi]."""
+        cur = self.conn.execute(
+            "SELECT post_no FROM posts WHERE gallery_id=? "
+            "AND substr(posted_at, 1, 10) BETWEEN ? AND ?",
+            (gallery_id, lo, hi),
+        )
+        return {int(r[0]) for r in cur.fetchall()}
+
+    def delete_posts(self, post_nos: list[int]) -> int:
+        """Delete the given posts and their comments. Returns posts deleted."""
+        ids = [int(x) for x in post_nos]
+        if not ids:
+            return 0
+        placeholders = ", ".join("?" * len(ids))
+        self.conn.execute(
+            f"DELETE FROM comments WHERE post_no IN ({placeholders})", ids
+        )
+        cur = self.conn.execute(
+            f"DELETE FROM posts WHERE post_no IN ({placeholders})", ids
+        )
+        return cur.rowcount

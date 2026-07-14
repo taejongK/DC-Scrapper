@@ -62,7 +62,8 @@ def test_crawl_range_filters_and_stops():
         3: _row(80, "💬잡담", "2026-07-01 23:00:00"),
     }
     fake = _FakeFetcher(pages)
-    got = _crawl_list(fake, "aichatting", "2026-07-02", "2026-07-05", max_pages=10)
+    got, complete = _crawl_list(fake, "aichatting", "2026-07-02", "2026-07-05", max_pages=10)
     nos = sorted(p["post_no"] for p in got)
     assert nos == [90, 92]          # 91 is a notice, excluded; today skipped; 07-01 excluded
     assert fake.requested == [1, 2, 3]   # stopped after page 3 (hit older-than-range)
+    assert complete is True         # walked past the range's older edge
