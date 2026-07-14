@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from analysis import db as adb
-from analysis import keywords, llm, llm_report, sentiment, stats, timeseries, trends
+from analysis import keywords, llm, llm_report, stats, timeseries, trends
 from dc_scraper import config as scfg
 
 from .jobs import manager
@@ -163,17 +163,6 @@ def api_categories(gallery_id: str | None = None, date_from: str | None = None,
     return stats.category_distribution(db_path(), **_filters(gallery_id, date_from, date_to, q=q))
 
 
-@router.get("/analysis/timeseries")
-def api_timeseries(kind: str = Query("date", pattern="^(date|hour|weekday|sentiment|engagement)$"),
-                   gallery_id: str | None = None, date_from: str | None = None,
-                   date_to: str | None = None, q: str | None = None) -> list[dict]:
-    f = _filters(gallery_id, date_from, date_to, q=q)
-    return {"date": timeseries.by_date, "hour": timeseries.by_hour,
-            "weekday": timeseries.by_weekday,
-            "sentiment": timeseries.sentiment_by_date,
-            "engagement": timeseries.engagement_by_date}[kind](db_path(), **f)
-
-
 @router.get("/analysis/heatmap")
 def api_heatmap(gallery_id: str | None = None, date_from: str | None = None,
                 date_to: str | None = None, q: str | None = None) -> dict:
@@ -193,31 +182,11 @@ def api_bursts(date: str | None = None, source: str = "post", top_n: int = 20,
 
 @router.get("/analysis/keywords")
 def api_keywords(source: str = "all", top_n: int = 50,
-                 method: str = Query("count", pattern="^(count|salient)$"),
                  gallery_id: str | None = None, date_from: str | None = None,
                  date_to: str | None = None, q: str | None = None) -> list[dict]:
-    """Keyword list. ``method=count`` = raw frequency; ``salient`` = TF-IDF."""
+    """Top-N keyword frequencies (used by the word cloud)."""
     f = _filters(gallery_id, date_from, date_to, q=q)
-    fn = keywords.salient_words if method == "salient" else keywords.word_frequency
-    return fn(db_path(), source=source, top_n=top_n, **f)
-
-
-@router.get("/analysis/related")
-def api_related(word: str, source: str = "all", top_n: int = 30,
-                gallery_id: str | None = None, date_from: str | None = None,
-                date_to: str | None = None) -> dict:
-    if not word or not word.strip():
-        raise HTTPException(400, "word is required")
-    return keywords.related_words(db_path(), keyword=word, source=source, top_n=top_n,
-                                  **_filters(gallery_id, date_from, date_to))
-
-
-@router.get("/analysis/sentiment")
-def api_sentiment(source: str = "comment", gallery_id: str | None = None,
-                  date_from: str | None = None, date_to: str | None = None,
-                  q: str | None = None) -> dict:
-    return sentiment.sentiment_distribution(db_path(), source=source,
-                                            **_filters(gallery_id, date_from, date_to, q=q))
+    return keywords.word_frequency(db_path(), source=source, top_n=top_n, **f)
 
 
 @router.get("/analysis/llm_status")

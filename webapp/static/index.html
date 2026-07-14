@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DCInside 수집·분석 대시보드</title>
   <link rel="stylesheet" href="/style.css" />
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/wordcloud@1.2.2/src/wordcloud2.min.js"></script>
 </head>
 <body>
@@ -107,49 +106,14 @@
       <div id="llm-report"></div>
     </div>
 
-    <div class="grid-2">
-      <div class="card"><h2>📈 날짜별 글 수</h2><canvas id="chart-date"></canvas></div>
-      <div class="card"><h2>🕐 시간대별 활동</h2><canvas id="chart-hour"></canvas></div>
-      <div class="card"><h2>📅 요일별 활동</h2><canvas id="chart-weekday"></canvas></div>
-      <div class="card"><h2>🏷️ 말머리 분포</h2><canvas id="chart-category"></canvas></div>
-      <div class="card">
-        <h2>🔤 키워드
-          <select id="kw-method" class="mini">
-            <option value="salient">특징어(TF-IDF)</option>
-            <option value="count">단순 빈도</option>
-          </select>
-          <select id="kw-source" class="mini">
-            <option value="all">전체</option><option value="title">제목</option>
-            <option value="body">본문</option><option value="comment">댓글</option>
-          </select>
-        </h2>
-        <canvas id="chart-keywords"></canvas>
-        <p class="note">특징어: 흔한 단어를 눌러 이 갤/기간에 <b>유독 튀는 단어</b>를 상위로</p>
-      </div>
-      <div class="card">
-        <h2>💬 감성 분포
-          <select id="sent-source" class="mini">
-            <option value="comment">댓글</option><option value="post">글</option><option value="all">전체</option>
-          </select>
-        </h2>
-        <canvas id="chart-sentiment"></canvas>
-        <p class="note">사전 기반 baseline · 슬랭 많은 글은 중립으로 분류될 수 있음</p>
-      </div>
-    </div>
-    <div class="grid-2">
-      <div class="card">
-        <h2>🔥 이슈 버스트
-          <input type="date" id="burst-date" class="mini" />
-        </h2>
-        <p id="burst-info" class="note"></p>
-        <div class="burst-cols">
-          <div><h3 class="sub">📈 급상승</h3><div id="burst-up"></div></div>
-          <div><h3 class="sub">✨ 신규 등장</h3><div id="burst-new"></div></div>
-        </div>
-      </div>
-      <div class="card">
-        <h2>🌡️ 감성 추이 <span class="note">(글 기준, 평균 점수)</span></h2>
-        <canvas id="chart-sent-trend"></canvas>
+    <div class="card">
+      <h2>🔥 이슈 버스트
+        <input type="date" id="burst-date" class="mini" />
+      </h2>
+      <p id="burst-info" class="note"></p>
+      <div class="burst-cols">
+        <div><h3 class="sub">📈 급상승</h3><div id="burst-up"></div></div>
+        <div><h3 class="sub">✨ 신규 등장</h3><div id="burst-new"></div></div>
       </div>
     </div>
 
@@ -166,19 +130,6 @@
         </select>
       </h2>
       <div id="wordcloud-wrap"><canvas id="wordcloud" width="1000" height="400"></canvas></div>
-    </div>
-
-    <div class="card">
-      <h2>🔗 연관어 분석</h2>
-      <div class="toolbar">
-        <input id="rel-word" placeholder="키워드 입력 (예: 에덴, 출력, 신드롬)" />
-        <select id="rel-source" class="mini" style="margin-left:0">
-          <option value="all">전체</option><option value="post">글</option><option value="comment">댓글</option>
-        </select>
-        <button id="rel-btn" class="primary">분석</button>
-      </div>
-      <p id="rel-info" class="note"></p>
-      <canvas id="chart-related"></canvas>
     </div>
 
     <div class="card">

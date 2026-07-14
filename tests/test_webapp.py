@@ -54,54 +54,16 @@ def test_top_invalid_sort_400(client):
     assert client.get("/api/stats/top?by=hack").status_code == 400
 
 
-def test_timeseries_endpoint(client):
-    r = client.get("/api/analysis/timeseries?kind=weekday")
-    wd = {x["weekday"]: x["count"] for x in r.json()}
-    assert wd["수"] == 2 and wd["목"] == 2
-
-
 def test_keywords_endpoint(client):
     r = client.get("/api/analysis/keywords?top_n=10")
     assert r.status_code == 200
     assert isinstance(r.json(), list)
 
 
-def test_sentiment_endpoint(client):
-    r = client.get("/api/analysis/sentiment?source=comment")
-    assert r.json()["total"] == 4
-
-
-def test_related_endpoint(client):
-    r = client.get("/api/analysis/related?word=에덴&source=all")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["keyword"] == "에덴"
-    assert "신드롬" in {x["word"] for x in body["related"]}
-
-
-def test_related_endpoint_missing_word_400(client):
-    assert client.get("/api/analysis/related?word=").status_code == 400
-
-
 def test_keyword_filtered_overview(client):
     r = client.get("/api/stats/overview?q=신드롬")
     assert r.status_code == 200
     assert r.json()["posts"] == 1
-
-
-def test_keyword_filtered_sentiment(client):
-    r = client.get("/api/analysis/sentiment?source=comment&q=신드롬")
-    assert r.status_code == 200
-    assert r.json()["total"] == 2   # only post 1's comments
-
-
-def test_keywords_salient_method(client):
-    r = client.get("/api/analysis/keywords?method=salient&source=post&top_n=10")
-    assert r.status_code == 200
-    body = r.json()
-    assert isinstance(body, list)
-    if body:
-        assert {"word", "count", "score"} <= set(body[0])
 
 
 def test_heatmap_endpoint(client):
@@ -117,20 +79,6 @@ def test_bursts_endpoint(client):
     body = r.json()
     assert body["date"] == "2026-07-09"
     assert "bursts" in body and "new_keywords" in body
-
-
-def test_timeseries_sentiment_kind(client):
-    r = client.get("/api/analysis/timeseries?kind=sentiment")
-    assert r.status_code == 200
-    rows = r.json()
-    assert all("mean_score" in row for row in rows)
-
-
-def test_timeseries_engagement_kind(client):
-    r = client.get("/api/analysis/timeseries?kind=engagement")
-    assert r.status_code == 200
-    rows = {row["date"]: row for row in r.json()}
-    assert rows["2026-07-08"]["views"] == 150
 
 
 def test_collect_validation(client):

@@ -1,4 +1,4 @@
-from analysis import keywords, sentiment, stats, timeseries, trends
+from analysis import keywords, stats, timeseries, trends
 
 
 def test_overview(sample_db):
@@ -59,72 +59,10 @@ def test_keyword_filter_list_or(sample_db):
     assert set(adb.load_posts(sample_db, q=["신드롬"])["post_no"]) == {1}
 
 
-def test_timeseries_by_date(sample_db):
-    d = {r["date"]: r["count"] for r in timeseries.by_date(sample_db)}
-    assert d["2026-07-08"] == 2 and d["2026-07-09"] == 2
-
-
-def test_timeseries_weekday(sample_db):
-    wd = {r["weekday"]: r["count"] for r in timeseries.by_weekday(sample_db)}
-    # 2026-07-08 = Wed, 2026-07-09 = Thu
-    assert wd["수"] == 2 and wd["목"] == 2
-
-
-def test_timeseries_hour_full_range(sample_db):
-    hours = timeseries.by_hour(sample_db)
-    assert len(hours) == 24
-    by_h = {r["hour"]: r["count"] for r in hours}
-    assert by_h[9] == 1 and by_h[22] == 1
-
-
 def test_keywords_extracts_nouns(sample_db):
     kw = {k["word"]: k["count"] for k in keywords.word_frequency(sample_db, source="all", top_n=50)}
     # '캐릭터' appears in post 1 body; adult post body excluded
     assert any("캐릭터" == w for w in kw) or any("에덴" == w for w in kw)
-
-
-def test_sentiment_distribution(sample_db):
-    s = sentiment.sentiment_distribution(sample_db, source="comment")
-    assert s["total"] == 4
-    assert s["counts"]["positive"] >= 1   # "좋아 완전 추천", "재밌다"
-    assert s["counts"]["negative"] >= 1   # "짜증나고 별로야"
-
-
-def test_related_words(sample_db):
-    # post 1 body "이 캐릭터 정말 좋아 최고야" + title "에덴 신드롬 진짜 좋다"
-    r = keywords.related_words(sample_db, keyword="에덴", source="all", top_n=10)
-    assert r["keyword"] == "에덴"
-    assert r["doc_count"] >= 1
-    words = {x["word"] for x in r["related"]}
-    assert "신드롬" in words          # co-occurs in the same title
-    assert "에덴" not in words         # keyword itself excluded
-
-
-def test_related_words_empty_keyword(sample_db):
-    r = keywords.related_words(sample_db, keyword="  ", source="all")
-    assert r["doc_count"] == 0 and r["related"] == []
-
-
-def test_related_words_absent_keyword(sample_db):
-    r = keywords.related_words(sample_db, keyword="존재하지않는단어", source="all")
-    assert r["doc_count"] == 0 and r["related"] == []
-
-
-def test_salient_words_returns_scores(sample_db):
-    sal = keywords.salient_words(sample_db, source="post", top_n=20)
-    assert sal, "expected at least one salient term"
-    top = sal[0]
-    assert {"word", "count", "score"} <= set(top)
-    # sorted by score descending
-    scores = [s["score"] for s in sal]
-    assert scores == sorted(scores, reverse=True)
-
-
-def test_extract_terms_bigrams():
-    terms = keywords.extract_terms("에덴 캐릭터 업데이트")
-    # adjacent content nouns form bigrams, unigrams kept too
-    assert "에덴" in terms and "캐릭터" in terms
-    assert "에덴 캐릭터" in terms
 
 
 def test_extract_nouns_strips_inline_markup():
@@ -144,35 +82,12 @@ def test_extract_nouns_strips_inline_markup():
         assert junk not in nouns, f"{junk!r} leaked through markup cleaning"
 
 
-def test_related_words_pmi_ranks_distinctive(sample_db):
-    # 신드롬 co-occurs only with 에덴 (rare) -> high PMI, must appear
-    r = keywords.related_words(sample_db, keyword="에덴", source="all", top_n=10)
-    words = {x["word"] for x in r["related"]}
-    assert "신드롬" in words
-    assert all("score" in x for x in r["related"])
-
-
 def test_heatmap_shape(sample_db):
     hm = timeseries.heatmap(sample_db)
     assert hm["weekdays"] == ["월", "화", "수", "목", "금", "토", "일"]
     assert len(hm["matrix"]) == 7 and all(len(r) == 24 for r in hm["matrix"])
     # post 1: 2026-07-08 (Wed) 09:00 -> matrix[2][9] >= 1
     assert hm["matrix"][2][9] >= 1
-
-
-def test_engagement_by_date(sample_db):
-    eng = {e["date"]: e for e in timeseries.engagement_by_date(sample_db)}
-    assert eng["2026-07-08"]["posts"] == 2
-    assert eng["2026-07-08"]["views"] == 150      # 100 + 50
-    assert eng["2026-07-08"]["recommend"] == 11   # 10 + 1
-
-
-def test_sentiment_by_date(sample_db):
-    rows = {r["date"]: r for r in timeseries.sentiment_by_date(sample_db)}
-    # 2026-07-08: post1 positive, post2 negative
-    assert rows["2026-07-08"]["positive"] >= 1
-    assert rows["2026-07-08"]["negative"] >= 1
-    assert "mean_score" in rows["2026-07-08"]
 
 
 def test_trends_available_dates(sample_db):
@@ -195,9 +110,3 @@ def test_trends_empty_baseline_first_day(sample_db):
     assert b["baseline_days"] == 0
     # with no baseline, every term is "new"
     assert all(x["is_new"] for x in b["bursts"])
-
-
-def test_sentiment_score_text():
-    assert sentiment.score_text("이거 진짜 좋고 최고야")["label"] == "positive"
-    assert sentiment.score_text("완전 별로고 최악이야")["label"] == "negative"
-    assert sentiment.score_text("오늘 밥 먹었다")["label"] == "neutral"

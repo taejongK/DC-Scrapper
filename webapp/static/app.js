@@ -182,11 +182,6 @@ $("#modal-close").addEventListener("click", () => ($("#modal").style.display = "
 $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") $("#modal").style.display = "none"; });
 
 // ---------- Analysis ----------
-const charts = {};
-function draw(id, cfg) {
-  if (charts[id]) charts[id].destroy();
-  charts[id] = new Chart($("#" + id), cfg);
-}
 const PALETTE = ["#4c8dff","#34d399","#fbbf24","#f87171","#a78bfa","#22d3ee","#fb923c","#4ade80","#e879f9","#60a5fa"];
 
 async function loadAnalysis() {
@@ -198,20 +193,7 @@ async function loadAnalysis() {
     ["평균 댓글", ov.avg_comments], ["평균 조회", ov.avg_views], ["성인글", ov.adult_posts],
   ].map(([l, v]) => `<div class="stat"><div class="val">${fmt(v)}</div><div class="lbl">${l}</div></div>`).join("");
 
-  const dateD = await api("/api/analysis/timeseries?kind=date&" + q);
-  draw("chart-date", { type: "line", data: { labels: dateD.map(d=>d.date), datasets: [{ label:"글 수", data: dateD.map(d=>d.count), borderColor: PALETTE[0], backgroundColor:"#4c8dff33", fill:true, tension:.3 }] }, options: chOpts() });
-
-  const hourD = await api("/api/analysis/timeseries?kind=hour&" + q);
-  draw("chart-hour", { type: "bar", data: { labels: hourD.map(d=>d.hour+"시"), datasets:[{ label:"글 수", data: hourD.map(d=>d.count), backgroundColor: PALETTE[5] }] }, options: chOpts() });
-
-  const wdD = await api("/api/analysis/timeseries?kind=weekday&" + q);
-  draw("chart-weekday", { type:"bar", data:{ labels: wdD.map(d=>d.weekday), datasets:[{ label:"글 수", data: wdD.map(d=>d.count), backgroundColor: PALETTE[1] }] }, options: chOpts() });
-
-  const catD = await api("/api/stats/categories?" + q);
-  draw("chart-category", { type:"doughnut", data:{ labels: catD.map(d=>d.category), datasets:[{ data: catD.map(d=>d.count), backgroundColor: PALETTE }] }, options: chOpts(true) });
-
-  loadKeywords(); loadSentiment(); loadTop(); loadWordCloud();
-  loadBursts(); loadSentTrend(); loadHeatmap();
+  loadTop(); loadWordCloud(); loadBursts(); loadHeatmap();
   // prefill the LLM keyword box from the filter's keyword, if any
   const fq = filt().get("q");
   if (fq && !$("#llm-word").value) $("#llm-word").value = fq;
@@ -235,43 +217,11 @@ async function loadWordCloud() {
     backgroundColor: "transparent",
     rotateRatio: 0.4,
     shrinkToFit: true,
-    click: (item) => { $("#rel-word").value = item[0]; loadRelated(); },
+    // click a word -> prefill it into the LLM deep-analysis box
+    click: (item) => { $("#llm-word").value = item[0]; },
   });
 }
 $("#wc-source").addEventListener("change", loadWordCloud);
-
-async function loadRelated() {
-  const word = $("#rel-word").value.trim();
-  const info = $("#rel-info");
-  if (!word) { info.textContent = "키워드를 입력하세요."; return; }
-  const q = filt(); q.set("word", word); q.set("source", $("#rel-source").value); q.set("top_n", 25);
-  const r = await api("/api/analysis/related?" + q);
-  if (r.detail) { info.textContent = "오류: " + r.detail; return; }
-  info.textContent = `"${r.keyword}" 등장 문서 ${fmt(r.doc_count)}개 · 함께 나온 단어 ${r.related.length}개`;
-  if (!r.related.length) {
-    info.textContent += " — 연관어를 찾지 못했습니다.";
-    if (charts["chart-related"]) charts["chart-related"].destroy();
-    return;
-  }
-  draw("chart-related", {
-    type: "bar",
-    data: { labels: r.related.map((d) => d.word), datasets: [{ label: `"${r.keyword}" 연관어`, data: r.related.map((d) => d.count), backgroundColor: PALETTE[7] }] },
-    options: { ...chOpts(), indexAxis: "y" },
-  });
-}
-$("#rel-btn").addEventListener("click", loadRelated);
-$("#rel-word").addEventListener("keydown", (e) => { if (e.key === "Enter") loadRelated(); });
-async function loadKeywords() {
-  const method = $("#kw-method").value;
-  const q = filt(); q.set("source", $("#kw-source").value); q.set("top_n", 20);
-  q.set("method", method);
-  const kw = await api("/api/analysis/keywords?" + q);
-  const useScore = method === "salient";
-  draw("chart-keywords", { type:"bar", data:{ labels: kw.map(d=>d.word),
-    datasets:[{ label: useScore ? "특징도(TF-IDF)" : "빈도",
-      data: kw.map(d => useScore ? d.score : d.count), backgroundColor: PALETTE[4] }] },
-    options: { ...chOpts(), indexAxis:"y" } });
-}
 
 // ---------- LLM deep analysis ----------
 let llmReady = false;
@@ -364,21 +314,11 @@ async function loadBursts() {
        <span class="bmeta">×${x.count}</span></div>`).join("");
   $("#burst-up").innerHTML = rowsUp || '<p class="note">급상승 없음</p>';
   $("#burst-new").innerHTML = rowsNew || '<p class="note">신규 없음</p>';
-  // click a word -> related-word analysis
+  // click a word -> prefill it into the LLM deep-analysis box
   $$("#burst-up .bw, #burst-new .bw").forEach((el) =>
-    el.addEventListener("click", () => { $("#rel-word").value = el.textContent; loadRelated(); }));
+    el.addEventListener("click", () => { $("#llm-word").value = el.textContent; }));
 }
 $("#burst-date").addEventListener("change", loadBursts);
-
-// ---------- Sentiment trend ----------
-async function loadSentTrend() {
-  const q = filt().toString();
-  const rows = await api("/api/analysis/timeseries?kind=sentiment&" + q);
-  draw("chart-sent-trend", { type: "line",
-    data: { labels: rows.map(d=>d.date), datasets: [{ label: "평균 감성점수", data: rows.map(d=>d.mean_score),
-      borderColor: PALETTE[2], backgroundColor: "#fbbf2433", fill: true, tension: .3 }] },
-    options: { ...chOpts(), scales: { ...chOpts().scales, y: { suggestedMin: -1, suggestedMax: 1, ticks:{ color:"#8b98b0" }, grid:{ color:"#2d3a52" } } } } });
-}
 
 // ---------- Heatmap ----------
 async function loadHeatmap() {
@@ -395,12 +335,6 @@ async function loadHeatmap() {
   });
   $("#heatmap-wrap").innerHTML = html + "</tbody></table>";
 }
-async function loadSentiment() {
-  const q = filt(); q.set("source", $("#sent-source").value);
-  const s = await api("/api/analysis/sentiment?" + q);
-  const c = s.counts || {positive:0,negative:0,neutral:0};
-  draw("chart-sentiment", { type:"doughnut", data:{ labels:["긍정","부정","중립"], datasets:[{ data:[c.positive,c.negative,c.neutral], backgroundColor:[PALETTE[1],PALETTE[3],"#64748b"] }] }, options: chOpts(true) });
-}
 async function loadTop() {
   const q = filt(); q.set("by", $("#top-by").value); q.set("limit", 15);
   const rows = await api("/api/stats/top?" + q);
@@ -413,15 +347,8 @@ async function loadTop() {
     tb.appendChild(tr);
   });
 }
-$("#kw-source").addEventListener("change", loadKeywords);
-$("#kw-method").addEventListener("change", loadKeywords);
-$("#sent-source").addEventListener("change", loadSentiment);
 $("#top-by").addEventListener("change", loadTop);
 
-function chOpts(legend) {
-  return { responsive:true, plugins:{ legend:{ display: !!legend, labels:{ color:"#e6ecf7" } } },
-    scales: legend ? {} : { x:{ ticks:{ color:"#8b98b0" }, grid:{ color:"#2d3a52" } }, y:{ ticks:{ color:"#8b98b0" }, grid:{ color:"#2d3a52" } } } };
-}
 function escapeHtml(s) { return (s||"").replace(/[&<>"']/g, (m) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m])); }
 
 // ---------- Boot ----------
