@@ -27,6 +27,24 @@ _DATA = Path(__file__).parent / "data"
 # foreign/alphabet tokens (English brand/model names show up a lot here).
 _KEEP_TAGS = {"NNG", "NNP", "SL"}
 _HANGUL_URL = re.compile(r"https?://\S+")
+# Users (esp. AI-chat galleries) paste HTML/CSS status-window templates straight
+# into the post body as literal text, so ``div``/``px``/``font``/``color`` leak
+# in as "nouns". Strip inline markup before tokenizing. This runs on the stored
+# text at analysis time, so it cleans existing data too and leaves body_text
+# (what the user actually wrote) untouched.
+_HTML_TAG = re.compile(r"<[^>]+>")               # <div style="...">, </summary>, ...
+_HTML_ENTITY = re.compile(r"&[a-zA-Z#0-9]+;")    # &nbsp; &amp; &#39; ...
+_CSS_DECL = re.compile(                          # leftover `property: value;` runs
+    r"\b[a-zA-Z-]+\s*:\s*[^;{}<>\n]{1,120};")
+
+
+def _clean_markup(text: str) -> str:
+    """Remove URLs and inline HTML/CSS that users paste into the body as text."""
+    text = _HANGUL_URL.sub(" ", text)
+    text = _HTML_TAG.sub(" ", text)
+    text = _HTML_ENTITY.sub(" ", text)
+    text = _CSS_DECL.sub(" ", text)
+    return text
 
 
 @functools.lru_cache(maxsize=1)
@@ -46,7 +64,7 @@ def extract_nouns(text: str, *, min_len: int = 2) -> list[str]:
     """Return content nouns from ``text``, stopword- and length-filtered."""
     if not text:
         return []
-    text = _HANGUL_URL.sub(" ", text)
+    text = _clean_markup(text)
     stop = _stopwords()
     out: list[str] = []
     for tok in _kiwi().tokenize(text):
@@ -64,7 +82,7 @@ def extract_terms(text: str, *, min_len: int = 2, bigrams: bool = True) -> list[
     """
     if not text:
         return []
-    text = _HANGUL_URL.sub(" ", text)
+    text = _clean_markup(text)
     stop = _stopwords()
     toks = _kiwi().tokenize(text)
 

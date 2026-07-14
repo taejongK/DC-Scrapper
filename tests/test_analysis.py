@@ -127,6 +127,23 @@ def test_extract_terms_bigrams():
     assert "에덴 캐릭터" in terms
 
 
+def test_extract_nouns_strips_inline_markup():
+    # AI-chat users paste HTML/CSS status-window templates into the body as text;
+    # the tags, entity refs, and CSS units must not leak in as "nouns".
+    text = (
+        '캐릭터 상태창 양식임\n'
+        '<div style="background:#09090b; border: 2px solid #00e5ff; '
+        'padding: 12px; color: #ffffff; font-family: sans-serif;">상태</div>\n'
+        '라벨은 최소 60px, 바 높이는 6px로 맞춰줘&nbsp;'
+    )
+    nouns = set(keywords.extract_nouns(text))
+    # real content survives
+    assert "캐릭터" in nouns and "상태" in nouns
+    # markup / CSS noise is gone
+    for junk in ("div", "px", "font", "color", "border", "style", "padding", "background"):
+        assert junk not in nouns, f"{junk!r} leaked through markup cleaning"
+
+
 def test_related_words_pmi_ranks_distinctive(sample_db):
     # 신드롬 co-occurs only with 에덴 (rare) -> high PMI, must appear
     r = keywords.related_words(sample_db, keyword="에덴", source="all", top_n=10)
