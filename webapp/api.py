@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from analysis import db as adb
-from analysis import keywords, llm, llm_report, stats, timeseries, trends
+from analysis import keywords, llm, llm_agent, llm_report, stats, timeseries, trends
 from dc_scraper import config as scfg
 
 from .jobs import manager
@@ -219,6 +219,28 @@ def api_llm_report(req: LLMReportRequest) -> dict:
     f = _filters(req.gallery_id, req.date_from, req.date_to)
     return llm_report.keyword_report(db_path(), keyword=req.q, source=req.source,
                                      refresh=req.refresh, max_posts=req.max_posts, **f)
+
+
+class AskRequest(BaseModel):
+    question: str
+    gallery_id: str | None = None
+    date_from: str | None = None
+    date_to: str | None = None
+    max_turns: int = 6
+
+
+@router.post("/analysis/ask")
+def api_ask(req: AskRequest) -> dict:
+    """Agentic Q&A: the LLM searches the corpus itself and answers with citations.
+
+    Single-turn (v1). The gallery/date filters scope every search the agent runs.
+    """
+    if not req.question or not req.question.strip():
+        raise HTTPException(400, "question (질문) is required")
+    turns = max(1, min(req.max_turns, 10))
+    return llm_agent.answer_question(
+        db_path(), question=req.question, max_turns=turns,
+        gallery_id=req.gallery_id, date_from=req.date_from, date_to=req.date_to)
 
 
 @router.get("/meta/galleries")

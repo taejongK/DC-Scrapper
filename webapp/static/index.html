@@ -26,6 +26,7 @@
     <button class="tab active" data-tab="collect">📥 수집</button>
     <button class="tab" data-tab="posts">📋 글 목록</button>
     <button class="tab" data-tab="analysis">📊 분석</button>
+    <button class="tab" data-tab="chat">💬 대화</button>
   </nav>
 
   <!-- ===== 수집 ===== -->
@@ -139,6 +140,20 @@
         </select>
       </h2>
       <table id="top-table"><thead><tr><th>제목</th><th>작성자</th><th>조회</th><th>추천</th><th>댓글</th></tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <!-- ===== 대화형 심층 분석 ===== -->
+  <section id="tab-chat" class="panel">
+    <div class="card llm-card">
+      <h2>💬 대화형 심층 분석 <span id="chat-model" class="note"></span></h2>
+      <p class="note">수집된 글·댓글에 대해 자연어로 물어보면, AI가 <b>직접 관련 글을 검색</b>해 <b>근거 링크</b>와 함께 답합니다. 상단 필터의 <b>갤러리·기간</b> 범위 안에서 검색해요. (예: <code>요즘 젬이오 업데이트 반응 어때?</code> · <code>어제 제일 시끄러웠던 떡밥은?</code>)</p>
+      <div class="toolbar">
+        <input id="chat-q" placeholder="커뮤니티에 대해 궁금한 걸 물어보세요…" />
+        <button id="chat-btn" class="primary">질문</button>
+      </div>
+      <div id="chat-status" class="note"></div>
+      <div id="chat-answer"></div>
     </div>
   </section>
 

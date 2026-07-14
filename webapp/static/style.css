@@ -119,6 +119,19 @@ table.hm tbody th { text-align: right; padding-right: 8px; }
 .src a:hover { border-color: var(--accent); }
 #llm-report .theme > b + .src { margin-left: 6px; }
 
+/* ---- conversational (agentic) analysis ---- */
+#chat-answer { margin-top: 10px; }
+.chat-bubble { font-size: 15px; line-height: 1.72; padding: 14px 16px; background: var(--panel);
+  border-radius: 10px; border-left: 3px solid var(--accent); }
+.chat-bubble a { color: var(--accent); text-decoration: none; padding: 0 2px; }
+.chat-bubble a:hover { text-decoration: underline; }
+.chat-cites { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chat-cites .sub { width: 100%; margin: 0 0 2px; }
+.chat-cites a { font-size: 12px; max-width: 320px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; padding: 3px 9px; border-radius: 999px; background: var(--card);
+  border: 1px solid var(--border); color: var(--accent); text-decoration: none; }
+.chat-cites a:hover { border-color: var(--accent); }
+
 /* ---- filter bar: scoped to 목록/분석 tabs only ---- */
 .filters[hidden] { display: none; }   /* override .filters display:flex */
 .filter-scope { font-size: 12px; font-weight: 600; color: var(--accent);

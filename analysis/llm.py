@@ -195,3 +195,110 @@ def complete_json(system: str, user: str, *, max_tokens: int = 2000,
         return json.loads(_extract_json(repaired))
     except (ValueError, json.JSONDecodeError) as exc:
         raise LLMError(f"LLM 응답을 JSON으로 파싱하지 못했습니다: {exc}\n원문: {raw[:500]}") from exc
+
+
+# --- tool-calling / agent loop ----------------------------------------------
+# The two backends speak different tool-use dialects, so callers describe tools
+# in ONE normalized shape and provide a ``dispatch(name, args) -> str`` callback;
+# ``run_tools`` drives the request→tool→result loop and returns the final text.
+# A tool spec is ``{"name", "description", "parameters": <JSON schema>}``.
+
+_TOOL_LOOP_OVERRIDE = None
+
+
+def set_tool_loop_override(fn) -> None:
+    """Install (or clear with None) a stand-in for ``run_tools`` — used by tests."""
+    global _TOOL_LOOP_OVERRIDE
+    _TOOL_LOOP_OVERRIDE = fn
+
+
+def _run_tools_openrouter(system, user, tools, dispatch, max_turns, max_tokens,
+                          temperature, model) -> str:
+    headers = {
+        "Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}",
+        "Content-Type": "application/json",
+        "X-Title": "dc-scraper",
+    }
+    oa_tools = [{"type": "function", "function": t} for t in tools]
+    messages = [{"role": "system", "content": system},
+                {"role": "user", "content": user}]
+    for _ in range(max_turns):
+        payload = {"model": model, "max_tokens": max_tokens,
+                   "temperature": temperature, "messages": messages,
+                   "tools": oa_tools}
+        resp = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=120)
+        if resp.status_code != 200:
+            raise LLMError(f"OpenRouter 오류 {resp.status_code}: {resp.text[:300]}")
+        data = resp.json()
+        if data.get("error"):
+            raise LLMError(f"OpenRouter 오류: {data['error']}")
+        msg = data["choices"][0]["message"]
+        calls = msg.get("tool_calls")
+        if not calls:
+            return msg.get("content") or ""
+        messages.append(msg)
+        for tc in calls:
+            fn = tc["function"]
+            try:
+                args = json.loads(fn.get("arguments") or "{}")
+            except (ValueError, json.JSONDecodeError):
+                args = {}
+            result = dispatch(fn["name"], args)
+            messages.append({"role": "tool", "tool_call_id": tc["id"],
+                             "content": result})
+    return "질문에 대한 검색을 여러 번 했지만 정리된 답을 만들지 못했습니다. 질문을 조금 더 구체적으로 바꿔보세요."
+
+
+def _run_tools_anthropic(system, user, tools, dispatch, max_turns, max_tokens,
+                         temperature, model) -> str:
+    import anthropic
+    client = anthropic.Anthropic()
+    an_tools = [{"name": t["name"], "description": t["description"],
+                 "input_schema": t["parameters"]} for t in tools]
+    messages = [{"role": "user", "content": user}]
+    for _ in range(max_turns):
+        resp = client.messages.create(
+            model=model, max_tokens=max_tokens, temperature=temperature,
+            system=system, messages=messages, tools=an_tools)
+        if resp.stop_reason != "tool_use":
+            return "".join(b.text for b in resp.content if b.type == "text")
+        messages.append({"role": "assistant", "content": resp.content})
+        results = []
+        for block in resp.content:
+            if block.type == "tool_use":
+                out = dispatch(block.name, block.input or {})
+                results.append({"type": "tool_result", "tool_use_id": block.id,
+                                "content": out})
+        messages.append({"role": "user", "content": results})
+    return "질문에 대한 검색을 여러 번 했지만 정리된 답을 만들지 못했습니다. 질문을 조금 더 구체적으로 바꿔보세요."
+
+
+def run_tools(system: str, user: str, tools: list[dict], dispatch, *,
+              max_turns: int = 6, max_tokens: int = 1500,
+              temperature: float = 0.2, model: str | None = None) -> str:
+    """Drive an agentic tool-use loop and return the final assistant text.
+
+    ``tools`` are normalized specs; ``dispatch(name, args)`` runs a tool and
+    returns a string result fed back to the model. Bounded by ``max_turns``.
+    """
+    if _TOOL_LOOP_OVERRIDE is not None:
+        return _TOOL_LOOP_OVERRIDE(system=system, user=user, tools=tools,
+                                   dispatch=dispatch, max_turns=max_turns,
+                                   max_tokens=max_tokens, temperature=temperature,
+                                   model=model or model_name())
+    b = _backend()
+    mdl = model or model_name()
+    try:
+        if b == "openrouter":
+            return _run_tools_openrouter(system, user, tools, dispatch, max_turns,
+                                         max_tokens, temperature, mdl)
+        if b == "anthropic":
+            if not _has_anthropic_sdk():
+                raise LLMError("anthropic SDK 미설치 (pip install anthropic).")
+            return _run_tools_anthropic(system, user, tools, dispatch, max_turns,
+                                        max_tokens, temperature, mdl)
+        raise LLMError("API 키가 설정되지 않았습니다 (OPENROUTER_API_KEY 또는 ANTHROPIC_API_KEY).")
+    except LLMError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - surface any backend error uniformly
+        raise LLMError(f"LLM 툴 호출 실패: {exc}") from exc

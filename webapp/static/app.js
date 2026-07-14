@@ -17,7 +17,7 @@ const fmt = (n) => (n == null ? "-" : Number(n).toLocaleString());
 // ---------- Tabs ----------
 // The top filter bar only scopes 글목록/분석, so it's shown only on those tabs.
 function syncFilterBar(tab) {
-  $("#filter-bar").hidden = (tab !== "posts" && tab !== "analysis");
+  $("#filter-bar").hidden = (tab !== "posts" && tab !== "analysis" && tab !== "chat");
 }
 $$(".tab").forEach((t) =>
   t.addEventListener("click", () => {
@@ -29,6 +29,7 @@ $$(".tab").forEach((t) =>
     if (t.dataset.tab === "analysis") loadAnalysis();
     if (t.dataset.tab === "posts") loadPosts();
     if (t.dataset.tab === "collect") loadRuns();
+    if (t.dataset.tab === "chat") loadChat();
   })
 );
 
@@ -233,6 +234,12 @@ async function initLLM() {
     `⚠️ LLM 미설정 — ${escapeHtml(st.reason || "")}. ` +
     `<code>ANTHROPIC_API_KEY</code> 설정 후 서버를 재시작하세요.`;
   $("#llm-btn").disabled = !st.available;
+  $("#chat-model").textContent = st.available ? `(${st.model})` : "";
+  $("#chat-btn").disabled = !st.available;
+  if (!st.available) {
+    $("#chat-status").innerHTML =
+      `⚠️ LLM 미설정 — ${escapeHtml(st.reason || "")}. 대화 기능을 쓰려면 API 키가 필요합니다.`;
+  }
 }
 async function runLLM() {
   const word = $("#llm-word").value.trim();
@@ -296,6 +303,59 @@ function renderLLM(r) {
 }
 $("#llm-btn").addEventListener("click", runLLM);
 $("#llm-word").addEventListener("keydown", (e) => { if (e.key === "Enter") runLLM(); });
+
+// ---------- Conversational (agentic) analysis ----------
+function loadChat() {
+  if (llmReady && !$("#chat-status").textContent.startsWith("✅")) $("#chat-status").innerHTML = "";
+  $("#chat-q").focus();
+}
+async function runAsk() {
+  const q = $("#chat-q").value.trim();
+  const status = $("#chat-status");
+  const box = $("#chat-answer");
+  if (!q) { status.textContent = "질문을 입력하세요."; return; }
+  if (!llmReady) { return; }
+  status.innerHTML = `⏳ "<b>${escapeHtml(q)}</b>" — AI가 관련 글을 검색하며 분석 중… (수십 초 걸릴 수 있음)`;
+  box.innerHTML = "";
+  const f = filt();
+  const body = {
+    question: q,
+    gallery_id: f.get("gallery_id") || null,
+    date_from: f.get("date_from") || null,
+    date_to: f.get("date_to") || null,
+  };
+  let r;
+  try {
+    r = await fetch("/api/analysis/ask", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((x) => x.json());
+  } catch (e) { status.innerHTML = "❌ 요청 실패: " + escapeHtml(String(e)); return; }
+  if (r.detail) { status.innerHTML = "❌ " + escapeHtml(r.detail); return; }
+  if (r.error) { status.innerHTML = "⚠️ " + escapeHtml(r.error); return; }
+  renderAsk(r);
+}
+function renderAsk(r) {
+  $("#chat-status").innerHTML = `✅ 답변 완료 · 참고 글 ${fmt(r.used_posts)}개`;
+  const cites = {};
+  (r.citations || []).forEach((c) => { cites[c.post_no] = c; });
+  // inline [#123] / #123 -> source links; then newlines -> <br>
+  let html = escapeHtml(r.answer || "").replace(/\[?#(\d+)\]?/g, (m, no) => {
+    const c = cites[no];
+    return c && c.url
+      ? `<a href="${c.url}" target="_blank" title="${escapeHtml(c.title || "")}">#${no}</a>` : m;
+  }).replace(/\n/g, "<br>");
+  let src = "";
+  if ((r.citations || []).length) {
+    src = `<div class="chat-cites"><h3 class="sub">🔗 근거 글</h3>` +
+      r.citations.map((c) =>
+        `<a href="${c.url}" target="_blank">#${c.post_no} ${escapeHtml(c.title || "")}</a>`).join("") +
+      `</div>`;
+  }
+  $("#chat-answer").innerHTML = `<div class="chat-bubble">${html}</div>${src}`;
+}
+$("#chat-btn").addEventListener("click", runAsk);
+$("#chat-q").addEventListener("keydown", (e) => { if (e.key === "Enter") runAsk(); });
 
 // ---------- Issue bursts ----------
 async function loadBursts() {
