@@ -215,7 +215,18 @@
 
     <div class="card" style="margin-top:22px">
       <h3>🧩 공통 토크나이저 — 명사 추출</h3>
-      <p class="mini"><span class="v muted"><b>워드클라우드·이슈 버스트</b>가 공유. ① 본문에 붙은 인라인 HTML/CSS(<code>&lt;div&gt;</code>·<code>px</code>·<code>font</code> 등, AI채팅 갤러리 특성상 상태창 템플릿이 텍스트로 섞임)를 <b>정리</b> → ② 형태소 분석기로 <b>명사(일반·고유·영문)</b>만 채택 → ③ 2자 이상 + 불용어 제외. 원본 글은 그대로 두고 분석 시점에만 정리한다.</span></p>
+      <p class="mini"><span class="v muted"><b>워드클라우드·이슈 버스트</b>가 공유하는, 문장에서 "의미 있는 단어"만 골라내는 단계다. 한국어는 <code>젬이오<b>가</b></code>·<code>젬이오<b>는</b></code>처럼 단어에 조사가 달라붙어, 띄어쓰기로 자르거나 글자를 부분일치시키면 같은 단어를 하나로 못 묶는다. 그래서 <b>형태소 분석기(kiwipiepy)</b>를 쓴다.</span></p>
+
+      <pre class="flow"><span class="c"># 예: "젬이오가 검열을 너무 세게 한다"</span>
+형태소 분석 →  젬이오<span class="c">/명사</span>  가<span class="c">/조사</span>  검열<span class="c">/명사</span>  을<span class="c">/조사</span>  너무<span class="c">/부사</span>  세<span class="c">/형용사</span>  게<span class="c">/어미</span>  하<span class="c">/동사</span> …
+채택       →  <span class="h">젬이오</span>              <span class="h">검열</span></pre>
+
+      <div class="mini">
+        <div class="row"><span class="k how">① 품사</span><span class="v"><b>품사 태그로 명사만 채택.</b> 형태소 분석기는 문장을 의미 최소 단위로 쪼개고 각 조각에 <b>품사표</b>(명사·조사·동사·형용사·어미…)를 붙인다. 그중 <b>일반명사·고유명사·영문(알파벳)</b> 태그가 붙은 것만 남기고 나머지(조사·동사·어미 등)는 버린다. 그래서 "젬이오가"에서 조사 "가"가 떨어져 <code>젬이오</code>만 깔끔히 남는다 — 단순 부분일치로는 불가능한 일이다.</span></div>
+        <div class="row"><span class="k how">② 길이</span><span class="v"><b>2자 미만은 버린다.</b> "것·수·때"처럼 한 글자 명사는 대개 뜻이 옅은 의존명사라 노이즈다. 글자 수가 2 미만인 토큰을 제외한다.</span></div>
+        <div class="row"><span class="k how">③ 불용어</span><span class="v"><b>불용어 목록과 대조해 제거.</b> 명사여도 흔하고 밋밋해 변별력이 없는 단어(예: 사람·생각·정도)와 본문에 섞여 든 CSS 잔재(px·rem·div 등)를 미리 <b>불용어 사전(파일)에 등록</b>해 두고, 토큰이 그 목록에 있으면 뺀다. 영문은 소문자로 통일해 <code>GPT</code>·<code>gpt</code>를 같은 단어로 센다.</span></div>
+      </div>
+      <p class="mini" style="margin-top:14px"><span class="v muted">이 앞에서, 본문에 <b>텍스트로 섞여 든 인라인 HTML/CSS</b>(<code>&lt;div&gt;</code>·<code>px</code>·<code>font</code> 등 — AI채팅 갤러리에선 상태창 템플릿을 본문에 붙여넣는다)도 함께 걷어낸다. 이 정리는 <b>분석할 때만</b> 적용되고 원본 글은 건드리지 않는다.</span></p>
     </div>
 
     <!-- A -->
@@ -290,6 +301,31 @@
   ├─ <span class="h">③ map-reduce 요약</span>
   └─ <span class="h">④ 구조화 리포트 + 근거링크</span>  → 개요·긍정·부정·쟁점·인용
   ↳ <span class="c">DB 로깅</span></pre>
+
+      <h3 style="margin-top:28px; font-size:1.02rem">🗣️ 어떤 프롬프트를 쓰나 — 역할이 다른 두 개</h3>
+      <p class="mini"><span class="v muted">리포트는 성격이 다른 두 프롬프트로 나뉜다: <b>①검색어를 찾는 에이전트</b>와 <b>②여론을 분석하는 분석가</b>. 한 프롬프트에 다 시키지 않고 <b>역할을 분리</b>해 각자 한 가지만 잘하게 한다.</span></p>
+
+      <div class="grid g2" style="margin-top:14px">
+        <div class="card" style="box-shadow:none">
+          <h3 style="font-size:.96rem"><span class="tag">1단계</span> 검색어 발굴 에이전트</h3>
+          <ul class="clean" style="font-size:14px; margin-top:8px">
+            <li><b>역할 고정</b> — "질문에 <u>직접 답하지 말고</u>, 조사에 필요한 <b>검색어를 찾는 것</b>이 임무다"</li>
+            <li><b>은어 지시</b> — "커뮤니티는 표준어 대신 은어를 쓴다. 검색 결과의 제목·본문·<b>댓글</b>에서 같은 대상을 가리키는 실제 은어·동의어·표기변형을 찾아내라"</li>
+            <li><b>반복 유도</b> — "1차 결과가 적거나 비어도 부분 힌트에서 은어를 유추해 재검색하라"</li>
+            <li><b>출력 계약</b> — "설명 없이 검색 키워드 <b>JSON 배열만</b> 반환. 예: <code>["젬이오","젬","gemini"]</code>"</li>
+          </ul>
+        </div>
+        <div class="card" style="box-shadow:none">
+          <h3 style="font-size:.96rem"><span class="tag">2단계</span> 여론 분석가 <span class="v muted" style="font-size:12px">(map·reduce)</span></h3>
+          <ul class="clean" style="font-size:14px; margin-top:8px">
+            <li><b>역할 고정</b> — "너는 한국어 커뮤니티 여론 분석가다. <b>슬랭·은어·반어를 감안</b>해 무슨 이야기를 하고 어떻게 평가하는지 분석하라"</li>
+            <li><b>고정 스키마</b> — 개요·분위기·주제·긍정·부정·쟁점·인용을 정해진 <b>JSON 형식으로만</b> 반환하도록 강제</li>
+            <li><b>근거 규칙</b> — "모든 항목에 판단 근거가 된 <b>글 번호(post_nos)를 반드시</b> 포함하라. <b>근거 없는 항목은 만들지 마라</b>"</li>
+            <li><b>종합(reduce)</b> — "여러 묶음의 부분 분석을 하나로 합치되, 각 항목의 <b>근거 글 번호는 합집합으로 모두 보존</b>하라"</li>
+          </ul>
+        </div>
+      </div>
+      <p class="mini" style="margin-top:12px"><span class="v muted">여기에 더해, 결과가 프로그램에서 바로 쓰이도록 <b>형식 규칙</b>을 항상 덧붙인다 — "유효한 JSON 하나만, 코드펜스 금지, 값 안에 줄바꿈 금지, 인용부호는 큰따옴표 대신 작은따옴표". 그래도 깨지면 <b>1회 자동 복구(JSON 고치기)</b>를 시도한다.</span></p>
 
       <div class="callout"><span class="i">◆</span><div>이 방식은 무거운 에이전트 프레임워크(LangGraph)나 지식그래프(GraphRAG) 없이 <b>얇은 도구호출 루프</b>로 구현해, 의존성을 늘리지 않으면서 "스스로 검색해 답하는" 동작을 얻는다. 검색은 현재 <b>키워드 부분일치</b> 기반이며, 동의어·표현 다양성을 더 넓히려면 임베딩 기반 의미검색이 향후 후보다.</div></div>
     </div>
