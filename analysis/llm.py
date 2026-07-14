@@ -182,7 +182,9 @@ def complete_json(system: str, user: str, *, max_tokens: int = 2000,
     raw = complete(system + _JSON_RULES, user, max_tokens=max_tokens,
                    temperature=temperature, model=model)
     try:
-        return json.loads(_extract_json(raw))
+        # strict=False tolerates raw control chars (newlines/tabs) inside strings,
+        # a very common LLM-JSON slip.
+        return json.loads(_extract_json(raw), strict=False)
     except (ValueError, json.JSONDecodeError):
         pass  # fall through to a single repair attempt
 
@@ -192,7 +194,7 @@ def complete_json(system: str, user: str, *, max_tokens: int = 2000,
         f"다음을 유효한 JSON으로 고쳐라:\n{raw}",
         max_tokens=max_tokens, temperature=0.0, model=model)
     try:
-        return json.loads(_extract_json(repaired))
+        return json.loads(_extract_json(repaired), strict=False)
     except (ValueError, json.JSONDecodeError) as exc:
         raise LLMError(f"LLM 응답을 JSON으로 파싱하지 못했습니다: {exc}\n원문: {raw[:500]}") from exc
 

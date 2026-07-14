@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from analysis import db as adb
-from analysis import keywords, llm, llm_agent, llm_report, stats, timeseries, trends
+from analysis import keywords, llm, llm_agent, stats, timeseries, trends
 from dc_scraper import config as scfg
 
 from .jobs import manager
@@ -195,51 +195,29 @@ def api_llm_status() -> dict:
     return llm.status()
 
 
-class LLMReportRequest(BaseModel):
-    q: str
-    source: str = "post_comment"          # post_comment | post
-    refresh: bool = False
-    max_posts: int = 60
-    gallery_id: str | None = None
-    date_from: str | None = None
-    date_to: str | None = None
-
-
-@router.post("/analysis/llm_report")
-def api_llm_report(req: LLMReportRequest) -> dict:
-    """LLM qualitative report over posts (+comments) containing a keyword.
-
-    Synchronous: may take a while on large keywords, but results are cached, so
-    re-requests are instant. Use ``refresh=true`` to bypass the cache.
-    """
-    if not req.q or not req.q.strip():
-        raise HTTPException(400, "q (키워드) is required")
-    if req.source not in ("post_comment", "post"):
-        raise HTTPException(400, "source must be post_comment or post")
-    f = _filters(req.gallery_id, req.date_from, req.date_to)
-    return llm_report.keyword_report(db_path(), keyword=req.q, source=req.source,
-                                     refresh=req.refresh, max_posts=req.max_posts, **f)
-
-
 class AskRequest(BaseModel):
     question: str
     gallery_id: str | None = None
     date_from: str | None = None
     date_to: str | None = None
     max_turns: int = 6
+    max_posts: int = 60
 
 
 @router.post("/analysis/ask")
 def api_ask(req: AskRequest) -> dict:
-    """Agentic Q&A: the LLM searches the corpus itself and answers with citations.
+    """Slang-aware structured deep report for a free-form question.
 
-    Single-turn (v1). The gallery/date filters scope every search the agent runs.
+    The agent first discovers the best search terms (including community slang)
+    from the corpus, then runs the exhaustive keyword report over them. The
+    gallery/date filters scope every search. Each report is logged to qa_log.
     """
     if not req.question or not req.question.strip():
         raise HTTPException(400, "question (질문) is required")
     turns = max(1, min(req.max_turns, 10))
-    return llm_agent.answer_question(
-        db_path(), question=req.question, max_turns=turns,
+    posts = max(10, min(req.max_posts, 120))
+    return llm_agent.deep_report(
+        db_path(), question=req.question, max_turns=turns, max_posts=posts,
         gallery_id=req.gallery_id, date_from=req.date_from, date_to=req.date_to)
 
 

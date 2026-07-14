@@ -139,16 +139,3 @@ def test_api_llm_status(client, monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     r = client.get("/api/analysis/llm_status")
     assert r.status_code == 200 and r.json()["available"] is False
-
-
-def test_api_llm_report(client, mock_llm):
-    r = client.post("/api/analysis/llm_report", json={"q": "에덴", "source": "post_comment"})
-    assert r.status_code == 200
-    body = r.json()
-    assert body["overview"] == "요약문" and body["analyzed_posts"] == 1
-
-
-def test_api_llm_report_validation(client):
-    assert client.post("/api/analysis/llm_report", json={"q": "  "}).status_code == 400
-    assert client.post("/api/analysis/llm_report",
-                       json={"q": "x", "source": "bad"}).status_code == 400

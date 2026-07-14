@@ -91,22 +91,6 @@
   <section id="tab-analysis" class="panel">
     <div id="overview-cards" class="cards"></div>
 
-    <div class="card llm-card">
-      <h2>🧠 LLM 심층 분석 <span id="llm-model" class="note"></span></h2>
-      <p class="note">키워드가 들어간 글·댓글을 LLM으로 읽어 <b>무슨 내용·평가·쟁점</b>이 있는지 정리하고, 각 항목마다 <b>근거 글 링크</b>를 붙입니다. 여러 키워드는 <code>or</code> 또는 <code>,</code>로 구분(하나라도 포함 시 매칭).</p>
-      <div class="toolbar">
-        <input id="llm-word" placeholder="키워드 (예: 에덴  ·  여러 개: 에덴 or 오브, 젬)" />
-        <select id="llm-source" class="mini" style="margin-left:0">
-          <option value="post_comment">글+댓글</option>
-          <option value="post">글만</option>
-        </select>
-        <label class="check"><input type="checkbox" id="llm-refresh" /> 새로 분석</label>
-        <button id="llm-btn" class="primary">분석</button>
-      </div>
-      <div id="llm-status" class="note"></div>
-      <div id="llm-report"></div>
-    </div>
-
     <div class="card">
       <h2>🔥 이슈 버스트
         <input type="date" id="burst-date" class="mini" />
@@ -143,14 +127,14 @@
     </div>
   </section>
 
-  <!-- ===== 대화형 심층 분석 ===== -->
+  <!-- ===== 심층 리포트 (에이전트 검색 + 전수 구조화) ===== -->
   <section id="tab-chat" class="panel">
     <div class="card llm-card">
-      <h2>💬 대화형 심층 분석 <span id="chat-model" class="note"></span></h2>
-      <p class="note">수집된 글·댓글에 대해 자연어로 물어보면, AI가 <b>직접 관련 글을 검색</b>해 <b>근거 링크</b>와 함께 답합니다. 상단 필터의 <b>갤러리·기간</b> 범위 안에서 검색해요. (예: <code>요즘 젬이오 업데이트 반응 어때?</code> · <code>어제 제일 시끄러웠던 떡밥은?</code>)</p>
+      <h2>🧠 심층 리포트 <span id="chat-model" class="note"></span></h2>
+      <p class="note">자연어로 물어보면 AI가 <b>커뮤니티 은어까지 찾아가며 검색어를 발굴</b>하고, 관련 글·댓글을 <b>전수 분석</b>해 <b>구조화 리포트</b>(개요·분위기·주제·긍정·부정·쟁점·대표반응)를 근거 링크와 함께 만듭니다. 상단 필터의 <b>갤러리·기간</b> 범위 안에서 검색해요. (예: <code>요즘 젬이오 업데이트 반응 어때?</code> · <code>검열 관련 불만이 뭐가 있어?</code>)</p>
       <div class="toolbar">
         <input id="chat-q" placeholder="커뮤니티에 대해 궁금한 걸 물어보세요…" />
-        <button id="chat-btn" class="primary">질문</button>
+        <button id="chat-btn" class="primary">리포트 생성</button>
       </div>
       <div id="chat-status" class="note"></div>
       <div id="chat-answer"></div>

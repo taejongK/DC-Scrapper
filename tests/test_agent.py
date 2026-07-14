@@ -1,4 +1,6 @@
-"""Tests for the agentic Q&A analysis (no network — the tool loop is mocked)."""
+"""Tests for the deep-report analysis (no network — tool loop + LLM mocked)."""
+
+import json
 
 import pytest
 
@@ -6,10 +8,19 @@ from analysis import llm, llm_agent
 
 
 @pytest.fixture
-def with_key(monkeypatch):
+def mock_report(monkeypatch):
+    """Mock the discovery tool-loop AND the keyword_report map-reduce LLM."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    llm.set_tool_loop_override(lambda **kw: '["에덴"]')         # discovered terms
+    llm.set_override(lambda **kw: json.dumps({
+        "overview": "요약", "mood": "긍정",
+        "themes": [{"title": "T", "detail": "d", "post_nos": [1]}],
+        "positives": [{"text": "좋다", "post_nos": [1]}],
+        "negatives": [], "issues": [], "quotes": [{"quote": "최고", "post_no": 1}],
+    }, ensure_ascii=False))
     yield
     llm.set_tool_loop_override(None)
+    llm.set_override(None)
 
 
 # ---- retrieval tools (real, against the sample DB) -------------------------
@@ -34,8 +45,7 @@ def test_search_tool_no_match(sample_db):
 
 
 def test_search_tool_excludes_adult(sample_db):
-    # "지침" appears only in the adult post 3's title -> exclude_adult drops it,
-    # so the search finds nothing and never records post 3.
+    # "지침" appears only in the adult post 3's title -> exclude_adult drops it.
     seen = {}
     out = llm_agent._tool_search(sample_db, {"keywords": "지침"}, {}, seen)
     assert 3 not in seen
@@ -46,78 +56,71 @@ def test_get_post_tool(sample_db):
     seen = {}
     out = llm_agent._tool_get_post(sample_db, {"post_no": 1}, seen)
     assert "글 #1" in out and "본문:" in out
-    assert 1 in seen
-    # post 1 has 2 comments in the fixture -> comment section present
-    assert "댓글:" in out
+    assert 1 in seen and "댓글:" in out
 
 
 def test_get_post_tool_missing(sample_db):
     assert "찾지 못했" in llm_agent._tool_get_post(sample_db, {"post_no": 9999}, {})
 
 
-# ---- agent loop ------------------------------------------------------------
-def test_answer_question_cites_searched_posts(sample_db, with_key):
-    def fake_loop(**kw):
-        # the agent searches, then answers citing post #1
-        kw["dispatch"]("search_posts", {"keywords": "에덴"})
-        return "에덴 신드롬 반응은 대체로 긍정적이다 [#1]."
-
-    llm.set_tool_loop_override(fake_loop)
-    r = llm_agent.answer_question(sample_db, question="에덴 여론 어때?")
-    assert r["answer"].startswith("에덴")
-    assert r["used_posts"] == 1
-    assert r["empty"] is False
-    assert r["citations"][0]["post_no"] == 1
-    assert r["citations"][0]["url"] == "http://x/1"
+# ---- keyword-discovery parsing ---------------------------------------------
+def test_parse_term_list():
+    assert llm_agent._parse_term_list('["젬","gemini"]') == ["젬", "gemini"]
+    assert llm_agent._parse_term_list('설명 ["a","b"] 끝') == ["a", "b"]
+    assert llm_agent._parse_term_list("배열 없음") == []
+    assert llm_agent._parse_term_list('["a","A","a"]') == ["a"]   # case-insensitive dedup
 
 
-def test_answer_question_only_cites_referenced(sample_db, with_key):
-    def fake_loop(**kw):
-        kw["dispatch"]("search_posts", {"keywords": "이", "limit": 30})  # sees several
-        return "특별히 언급할 게 없다."                                    # cites none
-
-    llm.set_tool_loop_override(fake_loop)
-    r = llm_agent.answer_question(sample_db, question="아무거나")
-    assert r["used_posts"] >= 1          # tool did surface posts
-    assert r["citations"] == []          # but none were referenced in the answer
+def test_discover_keywords_fallback(sample_db, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    llm.set_tool_loop_override(lambda **kw: "그냥 텍스트, JSON 배열 없음")
+    terms = llm_agent.discover_keywords(sample_db, "에덴 신드롬", {})
+    llm.set_tool_loop_override(None)
+    assert terms == ["에덴", "신드롬"]   # falls back to the question's own keywords
 
 
-def test_answer_question_logs_to_db(sample_db, with_key):
-    llm.set_tool_loop_override(
-        lambda **kw: (kw["dispatch"]("search_posts", {"keywords": "에덴"}),
-                      "에덴 반응 긍정 [#1]")[1])
-    llm_agent.answer_question(sample_db, question="에덴 여론?", gallery_id="aichatting")
+# ---- deep report -----------------------------------------------------------
+def test_deep_report_discovers_and_reports(sample_db, mock_report):
+    r = llm_agent.deep_report(sample_db, question="에덴 여론?")
+    assert r["question"] == "에덴 여론?"
+    assert r["search_terms"] == ["에덴"]
+    assert r["overview"] == "요약"
+    assert r["post_count"] == 1
+    assert r["positives"][0]["sources"][0]["post_no"] == 1
+
+
+def test_deep_report_logs_to_db(sample_db, mock_report):
+    llm_agent.deep_report(sample_db, question="에덴 여론?", gallery_id="aichatting")
     hist = llm_agent.recent_questions(sample_db)
-    assert hist and hist[0]["question"] == "에덴 여론?"
-    assert "긍정" in hist[0]["answer"]
-    assert hist[0]["citations"][0]["post_no"] == 1
-    assert hist[0]["used_posts"] == 1
+    assert hist[0]["question"] == "에덴 여론?"
+    assert hist[0]["answer"] == "요약"                 # overview logged
+    assert hist[0]["citations"][0]["post_no"] == 1     # evidence flattened
+    assert hist[0]["used_posts"] == 1                  # post_count
 
 
-def test_recent_questions_newest_first(sample_db, with_key):
-    llm.set_tool_loop_override(lambda **kw: "답")
-    llm_agent.answer_question(sample_db, question="첫번째")
-    llm_agent.answer_question(sample_db, question="두번째")
+def test_recent_questions_newest_first(sample_db, mock_report):
+    llm_agent.deep_report(sample_db, question="첫번째")
+    llm_agent.deep_report(sample_db, question="두번째")
     hist = llm_agent.recent_questions(sample_db, limit=5)
     assert hist[0]["question"] == "두번째" and hist[1]["question"] == "첫번째"
 
 
-def test_failed_answer_not_logged(sample_db, monkeypatch):
+def test_deep_report_empty_question(sample_db):
+    assert llm_agent.deep_report(sample_db, question="   ")["error"]
+
+
+def test_deep_report_unavailable(sample_db, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    llm_agent.answer_question(sample_db, question="키없음")   # returns error, no log
-    assert all(h["question"] != "키없음" for h in llm_agent.recent_questions(sample_db))
-
-
-def test_answer_question_empty_question(sample_db):
-    assert llm_agent.answer_question(sample_db, question="   ")["error"]
-
-
-def test_answer_question_unavailable(sample_db, monkeypatch):
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    r = llm_agent.answer_question(sample_db, question="에덴 여론?")
+    r = llm_agent.deep_report(sample_db, question="에덴 여론?")
     assert "error" in r and "llm_status" in r
+
+
+def test_failed_report_not_logged(sample_db, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    llm_agent.deep_report(sample_db, question="키없음")   # error, no log
+    assert all(h["question"] != "키없음" for h in llm_agent.recent_questions(sample_db))
 
 
 # ---- API -------------------------------------------------------------------
@@ -130,27 +133,24 @@ def client(sample_db, monkeypatch):
     from webapp.main import app
     yield TestClient(app)
     llm.set_tool_loop_override(None)
+    llm.set_override(None)
 
 
-def test_api_ask(client):
-    llm.set_tool_loop_override(
-        lambda **kw: (kw["dispatch"]("search_posts", {"keywords": "에덴"}),
-                      "에덴 반응은 긍정적 [#1]")[1])
+def test_api_ask(client, mock_report):
     r = client.post("/api/analysis/ask", json={"question": "에덴 여론 어때?"})
     assert r.status_code == 200
     body = r.json()
-    assert "긍정" in body["answer"]
-    assert body["citations"][0]["post_no"] == 1
+    assert body["overview"] == "요약"
+    assert body["search_terms"] == ["에덴"]
+    assert body["positives"][0]["sources"][0]["post_no"] == 1
 
 
 def test_api_ask_validation(client):
     assert client.post("/api/analysis/ask", json={"question": "  "}).status_code == 400
 
 
-def test_api_ask_history(client):
-    llm.set_tool_loop_override(lambda **kw: "답변입니다 [#1]")
+def test_api_ask_history(client, mock_report):
     client.post("/api/analysis/ask", json={"question": "기록되나?"})
     r = client.get("/api/analysis/ask_history?limit=5")
     assert r.status_code == 200
-    hist = r.json()
-    assert hist and hist[0]["question"] == "기록되나?"
+    assert r.json()[0]["question"] == "기록되나?"

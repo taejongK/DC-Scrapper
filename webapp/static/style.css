@@ -98,39 +98,25 @@ table.hm th { position: static; padding: 3px 4px; color: var(--muted); font-weig
 table.hm td { padding: 0; text-align: center; border: 1px solid var(--bg); width: 3.6%; height: 22px; color: var(--text); font-size: 10px; }
 table.hm tbody th { text-align: right; padding-right: 8px; }
 
-/* ---- LLM deep analysis ---- */
+/* ---- deep report (structured, rendered into #chat-answer) ---- */
 .llm-card { border-color: var(--accent); }
-.llm-card .check { margin-left: 4px; }
-#llm-report { margin-top: 6px; }
+#chat-answer { margin-top: 6px; }
 .llm-overview { font-size: 15px; line-height: 1.65; padding: 12px 14px; background: var(--panel); border-radius: 8px; border-left: 3px solid var(--accent); }
 .llm-mood { color: var(--warn); font-size: 13px; margin: 10px 0 0; }
-#llm-report .sub { margin-top: 16px; }
-#llm-report ul { margin: 4px 0 0; padding-left: 20px; line-height: 1.7; }
-#llm-report .theme { padding: 8px 0; border-bottom: 1px solid var(--border); }
-#llm-report .theme > div { color: var(--muted); font-size: 13px; margin-top: 2px; }
+#chat-answer .sub { margin-top: 16px; }
+#chat-answer ul { margin: 4px 0 0; padding-left: 20px; line-height: 1.7; }
+#chat-answer .theme { padding: 8px 0; border-bottom: 1px solid var(--border); }
+#chat-answer .theme > div { color: var(--muted); font-size: 13px; margin-top: 2px; }
 .quote { padding: 7px 10px; margin: 6px 0; background: var(--panel); border-radius: 8px; font-size: 13px; }
 .quote .qcite { color: var(--muted); font-size: 11px; margin-left: 6px; }
-#llm-status code { background: var(--panel); padding: 1px 5px; border-radius: 4px; }
+#chat-status code { background: var(--panel); padding: 1px 5px; border-radius: 4px; }
 
-/* ---- LLM evidence source links ---- */
+/* ---- evidence source links ---- */
 .src { font-size: 0; }
 .src a, .src span { font-size: 11px; margin-left: 4px; padding: 0 5px; border-radius: 4px;
   background: var(--panel); border: 1px solid var(--border); color: var(--accent); text-decoration: none; }
 .src a:hover { border-color: var(--accent); }
-#llm-report .theme > b + .src { margin-left: 6px; }
-
-/* ---- conversational (agentic) analysis ---- */
-#chat-answer { margin-top: 10px; }
-.chat-bubble { font-size: 15px; line-height: 1.72; padding: 14px 16px; background: var(--panel);
-  border-radius: 10px; border-left: 3px solid var(--accent); }
-.chat-bubble a { color: var(--accent); text-decoration: none; padding: 0 2px; }
-.chat-bubble a:hover { text-decoration: underline; }
-.chat-cites { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.chat-cites .sub { width: 100%; margin: 0 0 2px; }
-.chat-cites a { font-size: 12px; max-width: 320px; overflow: hidden; text-overflow: ellipsis;
-  white-space: nowrap; padding: 3px 9px; border-radius: 999px; background: var(--card);
-  border: 1px solid var(--border); color: var(--accent); text-decoration: none; }
-.chat-cites a:hover { border-color: var(--accent); }
+#chat-answer .theme > b + .src { margin-left: 6px; }
 
 /* ---- filter bar: scoped to 목록/분석 tabs only ---- */
 .filters[hidden] { display: none; }   /* override .filters display:flex */

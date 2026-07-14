@@ -195,9 +195,6 @@ async function loadAnalysis() {
   ].map(([l, v]) => `<div class="stat"><div class="val">${fmt(v)}</div><div class="lbl">${l}</div></div>`).join("");
 
   loadTop(); loadWordCloud(); loadBursts(); loadHeatmap();
-  // prefill the LLM keyword box from the filter's keyword, if any
-  const fq = filt().get("q");
-  if (fq && !$("#llm-word").value) $("#llm-word").value = fq;
 }
 
 async function loadWordCloud() {
@@ -218,8 +215,8 @@ async function loadWordCloud() {
     backgroundColor: "transparent",
     rotateRatio: 0.4,
     shrinkToFit: true,
-    // click a word -> prefill it into the LLM deep-analysis box
-    click: (item) => { $("#llm-word").value = item[0]; },
+    // click a word -> prefill it into the 심층 리포트 질문창
+    click: (item) => { $("#chat-q").value = item[0]; },
   });
 }
 $("#wc-source").addEventListener("change", loadWordCloud);
@@ -229,82 +226,15 @@ let llmReady = false;
 async function initLLM() {
   const st = await api("/api/analysis/llm_status");
   llmReady = st.available;
-  $("#llm-model").textContent = st.available ? `(${st.model})` : "";
-  $("#llm-status").innerHTML = st.available ? "" :
-    `⚠️ LLM 미설정 — ${escapeHtml(st.reason || "")}. ` +
-    `<code>ANTHROPIC_API_KEY</code> 설정 후 서버를 재시작하세요.`;
-  $("#llm-btn").disabled = !st.available;
   $("#chat-model").textContent = st.available ? `(${st.model})` : "";
   $("#chat-btn").disabled = !st.available;
   if (!st.available) {
     $("#chat-status").innerHTML =
-      `⚠️ LLM 미설정 — ${escapeHtml(st.reason || "")}. 대화 기능을 쓰려면 API 키가 필요합니다.`;
+      `⚠️ LLM 미설정 — ${escapeHtml(st.reason || "")}. 리포트 기능을 쓰려면 API 키가 필요합니다.`;
   }
 }
-async function runLLM() {
-  const word = $("#llm-word").value.trim();
-  const status = $("#llm-status");
-  const box = $("#llm-report");
-  if (!word) { status.textContent = "키워드를 입력하세요."; return; }
-  if (!llmReady) { return; }
-  status.innerHTML = `⏳ "<b>${escapeHtml(word)}</b>" 관련 글·댓글을 LLM으로 분석 중… (수십 초 걸릴 수 있음)`;
-  box.innerHTML = "";
-  const f = filt();
-  const body = {
-    q: word, source: $("#llm-source").value, refresh: $("#llm-refresh").checked,
-    gallery_id: f.get("gallery_id") || null,
-    date_from: f.get("date_from") || null, date_to: f.get("date_to") || null,
-  };
-  let r;
-  try {
-    r = await fetch("/api/analysis/llm_report", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }).then((x) => x.json());
-  } catch (e) { status.innerHTML = "❌ 요청 실패: " + escapeHtml(String(e)); return; }
-  if (r.detail) { status.innerHTML = "❌ " + escapeHtml(r.detail); return; }
-  if (r.error) { status.innerHTML = "⚠️ " + escapeHtml(r.error); return; }
-  renderLLM(r);
-}
-function renderLLM(r) {
-  const tag = r.cached ? '<span class="badge">캐시</span>' :
-    (r.truncated ? `<span class="badge">상위 ${r.analyzed_posts}/${r.post_count}글 분석</span>` :
-      `<span class="badge">${r.analyzed_posts}글 분석</span>`);
-  $("#llm-status").innerHTML =
-    `✅ "<b>${escapeHtml(r.keyword)}</b>" 분석 완료 · 매칭 ${fmt(r.post_count)}글 ${tag}`;
-  if (r.empty) { $("#llm-report").innerHTML = `<p class="note">${escapeHtml(r.overview||"")}</p>`; return; }
-  // evidence links: [#123] chips linking back to the source post
-  const src = (sources) => (sources && sources.length)
-    ? ' <span class="src">' + sources.map((s) => s.url
-        ? `<a href="${s.url}" target="_blank" title="${escapeHtml(s.title||"")}">#${s.post_no}</a>`
-        : `<span>#${s.post_no}</span>`).join("") + "</span>"
-    : "";
-  const list = (arr) => (arr && arr.length)
-    ? "<ul>" + arr.map((x) => `<li>${escapeHtml(x.text || "")}${src(x.sources)}</li>`).join("") + "</ul>"
-    : '<p class="note">—</p>';
-  const themes = (r.themes || []).map((t) =>
-    `<div class="theme"><b>${escapeHtml(t.title || "")}</b>${src(t.sources)}` +
-    `<div>${escapeHtml(t.detail || "")}</div></div>`).join("");
-  const quotes = (r.quotes || []).map((q) => {
-    const cite = q.url ? `<a href="${q.url}" target="_blank">#${q.post_no} ↗</a>` :
-      (q.post_no != null ? `#${q.post_no}` : "");
-    return `<div class="quote">“${escapeHtml(q.quote || "")}” <span class="qcite">${cite}</span></div>`;
-  }).join("");
-  $("#llm-report").innerHTML = `
-    <div class="llm-overview">${escapeHtml(r.overview || "")}</div>
-    ${r.mood ? `<p class="llm-mood">🌡️ ${escapeHtml(r.mood)}</p>` : ""}
-    ${themes ? `<h3 class="sub">📌 주요 주제</h3>${themes}` : ""}
-    <div class="grid-2">
-      <div><h3 class="sub">👍 긍정 평가</h3>${list(r.positives)}</div>
-      <div><h3 class="sub">👎 부정 평가</h3>${list(r.negatives)}</div>
-    </div>
-    ${(r.issues && r.issues.length) ? `<h3 class="sub">⚔️ 쟁점</h3>${list(r.issues)}` : ""}
-    ${quotes ? `<h3 class="sub">💬 대표 반응</h3>${quotes}` : ""}`;
-}
-$("#llm-btn").addEventListener("click", runLLM);
-$("#llm-word").addEventListener("keydown", (e) => { if (e.key === "Enter") runLLM(); });
 
-// ---------- Conversational (agentic) analysis ----------
+// ---------- Deep report (agentic keyword discovery + structured) ----------
 function loadChat() {
   if (llmReady && !$("#chat-status").textContent.startsWith("✅")) $("#chat-status").innerHTML = "";
   $("#chat-q").focus();
@@ -315,7 +245,7 @@ async function runAsk() {
   const box = $("#chat-answer");
   if (!q) { status.textContent = "질문을 입력하세요."; return; }
   if (!llmReady) { return; }
-  status.innerHTML = `⏳ "<b>${escapeHtml(q)}</b>" — AI가 관련 글을 검색하며 분석 중… (수십 초 걸릴 수 있음)`;
+  status.innerHTML = `⏳ "<b>${escapeHtml(q)}</b>" — 은어까지 검색어를 발굴하고 전수 분석 중… (수십 초 걸릴 수 있음)`;
   box.innerHTML = "";
   const f = filt();
   const body = {
@@ -333,26 +263,45 @@ async function runAsk() {
   } catch (e) { status.innerHTML = "❌ 요청 실패: " + escapeHtml(String(e)); return; }
   if (r.detail) { status.innerHTML = "❌ " + escapeHtml(r.detail); return; }
   if (r.error) { status.innerHTML = "⚠️ " + escapeHtml(r.error); return; }
-  renderAsk(r);
+  renderReport(r);
 }
-function renderAsk(r) {
-  $("#chat-status").innerHTML = `✅ 답변 완료 · 참고 글 ${fmt(r.used_posts)}개`;
-  const cites = {};
-  (r.citations || []).forEach((c) => { cites[c.post_no] = c; });
-  // inline [#123] / #123 -> source links; then newlines -> <br>
-  let html = escapeHtml(r.answer || "").replace(/\[?#(\d+)\]?/g, (m, no) => {
-    const c = cites[no];
-    return c && c.url
-      ? `<a href="${c.url}" target="_blank" title="${escapeHtml(c.title || "")}">#${no}</a>` : m;
-  }).replace(/\n/g, "<br>");
-  let src = "";
-  if ((r.citations || []).length) {
-    src = `<div class="chat-cites"><h3 class="sub">🔗 근거 글</h3>` +
-      r.citations.map((c) =>
-        `<a href="${c.url}" target="_blank">#${c.post_no} ${escapeHtml(c.title || "")}</a>`).join("") +
-      `</div>`;
+function renderReport(r) {
+  const terms = (r.search_terms || []).map((t) => `<code>${escapeHtml(t)}</code>`).join(" ");
+  const tag = r.truncated
+    ? `<span class="badge">상위 ${r.analyzed_posts}/${fmt(r.post_count)}글 분석</span>`
+    : `<span class="badge">${fmt(r.analyzed_posts)}글 분석</span>`;
+  $("#chat-status").innerHTML =
+    `✅ 리포트 완료 · 검색어 ${terms || "—"} · 매칭 ${fmt(r.post_count)}글 ${tag}`;
+  if (r.empty) {
+    $("#chat-answer").innerHTML = `<p class="note">${escapeHtml(r.overview || "관련 글이 없습니다.")}</p>`;
+    return;
   }
-  $("#chat-answer").innerHTML = `<div class="chat-bubble">${html}</div>${src}`;
+  const src = (sources) => (sources && sources.length)
+    ? ' <span class="src">' + sources.map((s) => s.url
+        ? `<a href="${s.url}" target="_blank" title="${escapeHtml(s.title||"")}">#${s.post_no}</a>`
+        : `<span>#${s.post_no}</span>`).join("") + "</span>"
+    : "";
+  const list = (arr) => (arr && arr.length)
+    ? "<ul>" + arr.map((x) => `<li>${escapeHtml(x.text || "")}${src(x.sources)}</li>`).join("") + "</ul>"
+    : '<p class="note">—</p>';
+  const themes = (r.themes || []).map((t) =>
+    `<div class="theme"><b>${escapeHtml(t.title || "")}</b>${src(t.sources)}` +
+    `<div>${escapeHtml(t.detail || "")}</div></div>`).join("");
+  const quotes = (r.quotes || []).map((q) => {
+    const cite = q.url ? `<a href="${q.url}" target="_blank">#${q.post_no} ↗</a>` :
+      (q.post_no != null ? `#${q.post_no}` : "");
+    return `<div class="quote">“${escapeHtml(q.quote || "")}” <span class="qcite">${cite}</span></div>`;
+  }).join("");
+  $("#chat-answer").innerHTML = `
+    <div class="llm-overview">${escapeHtml(r.overview || "")}</div>
+    ${r.mood ? `<p class="llm-mood">🌡️ ${escapeHtml(r.mood)}</p>` : ""}
+    ${themes ? `<h3 class="sub">📌 주요 주제</h3>${themes}` : ""}
+    <div class="grid-2">
+      <div><h3 class="sub">👍 긍정 평가</h3>${list(r.positives)}</div>
+      <div><h3 class="sub">👎 부정 평가</h3>${list(r.negatives)}</div>
+    </div>
+    ${(r.issues && r.issues.length) ? `<h3 class="sub">⚔️ 쟁점</h3>${list(r.issues)}` : ""}
+    ${quotes ? `<h3 class="sub">💬 대표 반응</h3>${quotes}` : ""}`;
 }
 $("#chat-btn").addEventListener("click", runAsk);
 $("#chat-q").addEventListener("keydown", (e) => { if (e.key === "Enter") runAsk(); });
@@ -374,9 +323,9 @@ async function loadBursts() {
        <span class="bmeta">×${x.count}</span></div>`).join("");
   $("#burst-up").innerHTML = rowsUp || '<p class="note">급상승 없음</p>';
   $("#burst-new").innerHTML = rowsNew || '<p class="note">신규 없음</p>';
-  // click a word -> prefill it into the LLM deep-analysis box
+  // click a word -> prefill it into the 심층 리포트 질문창
   $$("#burst-up .bw, #burst-new .bw").forEach((el) =>
-    el.addEventListener("click", () => { $("#llm-word").value = el.textContent; }));
+    el.addEventListener("click", () => { $("#chat-q").value = el.textContent; }));
 }
 $("#burst-date").addEventListener("change", loadBursts);
 

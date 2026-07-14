@@ -271,17 +271,19 @@ def keyword_report(db_path: str | Path = db.DEFAULT_DB, *, keyword: str,
     batches = _batch(docs)
     if len(batches) == 1:
         report = llm.complete_json(_SINGLE_SYS, f"키워드: '{display}'\n\n{batches[0]}",
-                                   max_tokens=4000, model=mdl)
+                                   max_tokens=5000, model=mdl)
     else:
+        # generous per-call budgets so a rich batch/reduce summary isn't truncated
+        # mid-JSON (truncation is the main cause of unparseable output here).
         partials = []
         for i, b in enumerate(batches):
             partials.append(llm.complete_json(
                 _MAP_SYS, f"키워드: '{display}' (묶음 {i + 1}/{len(batches)})\n\n{b}",
-                max_tokens=2000, model=mdl))
+                max_tokens=3500, model=mdl))
         report = llm.complete_json(
             _REDUCE_SYS,
             f"키워드: '{display}'\n\n부분 분석 결과들(JSON):\n{json.dumps(partials, ensure_ascii=False)}",
-            max_tokens=4000, model=mdl)
+            max_tokens=6000, model=mdl)
 
     if not isinstance(report, dict):
         report = {"overview": str(report)}

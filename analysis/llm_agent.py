@@ -1,13 +1,15 @@
-"""Agentic Q&A over the collected community corpus.
+"""Deep report over the corpus, driven by an agentic keyword-discovery pass.
 
-Unlike ``llm_report`` (keyword → fixed-structure report), this lets the user ask
-a free-form question. The LLM drives its own retrieval: it calls ``search_posts``
-to find relevant posts and ``get_post`` to drill into one, then answers in Korean
-citing the post numbers it used (``[#123]``). The loop is a thin tool-calling
-cycle (``llm.run_tools``) — no agent framework — bounded by ``max_turns``.
+The user asks a free-form question; the LLM first *explores* the corpus with
+``search_posts`` / ``get_post`` (a thin tool-calling loop, ``llm.run_tools`` — no
+agent framework) to discover the best search terms, **including the community's
+slang / synonyms / spelling variants** mined from the actual hits (esp. comments).
+Those terms then feed ``llm_report.keyword_report`` — the exhaustive map-reduce
+engine — to produce a structured report (개요/분위기/주제/긍정/부정/쟁점/인용) with
+evidence links. Every question + report is logged to ``qa_log``.
 
-v1 is single-turn (one question → one grounded answer). Multi-turn conversation
-is a later phase.
+This is single-turn by design (a report, not a conversation). It supersedes the
+old standalone keyword report: same structured output, plus slang-aware retrieval.
 """
 
 from __future__ import annotations
@@ -17,7 +19,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from . import db, llm
+from . import db, llm, llm_report
 from .llm_report import _fetch_comments, _parse_keywords, _truncate
 
 _SEARCH_LIMIT = 15
@@ -25,21 +27,18 @@ _MAX_SEARCH_LIMIT = 30
 _BODY_CHARS = 1500
 _COMMENT_PREVIEW_POSTS = 8   # how many top hits show comment previews (slang source)
 
-_SYS = (
-    "너는 디시인사이드 커뮤니티 수집 데이터를 분석하는 리서치 에이전트다. "
-    "사용자의 질문에 답하기 위해 제공된 툴로 글·댓글을 직접 검색하고, 그 근거를 바탕으로 "
-    "한국어로 답한다.\n"
-    "원칙:\n"
-    "- 먼저 search_posts로 관련 글을 찾고, 필요하면 get_post로 본문·댓글을 확인한 뒤 답하라.\n"
-    "- 【검색어 확장 필수】 커뮤니티는 표준어 대신 은어·줄임말·표기변형을 쓴다. 1차 검색은 "
-    "질문의 표준어로 시작하되, 검색 결과의 제목·본문·'댓글'에서 같은 대상을 가리키는 실제 "
-    "은어·동의어·표기변형(예: 정식명↔줄임말↔영문표기)을 찾아, 최초 질문 의도에 맞는 추가 "
-    "검색어로 최소 한 번 더 확장 검색한 뒤 답하라. 1차 결과가 적거나 비어도 부분 힌트에서 "
-    "은어를 유추해 재검색하라.\n"
-    "- 슬랭·은어·반어를 감안해 실제 뉘앙스를 읽어라.\n"
-    "- 답의 각 핵심 주장 옆에 근거가 된 글 번호를 [#글번호] 형식으로 표기하라.\n"
-    "- 데이터에서 확인되지 않는 내용은 지어내지 말고 '해당 데이터에서는 확인되지 않는다'고 밝혀라.\n"
-    "- 답변은 간결하되, 여론의 갈래(긍정/부정/쟁점)가 있으면 나눠서 정리하라."
+_DISCOVER_SYS = (
+    "너는 디시인사이드 커뮤니티 데이터에서 '검색어를 발굴'하는 에이전트다. 사용자 질문의 "
+    "여론을 빠짐없이 조사하려면 어떤 키워드로 검색해야 하는지 찾는 것이 네 임무다. 질문에 "
+    "직접 답하지 마라.\n"
+    "방법:\n"
+    "- search_posts로 질문의 표준어를 먼저 검색하고, 필요하면 get_post로 본문·댓글을 확인하라.\n"
+    "- 【핵심】 커뮤니티는 표준어 대신 은어·줄임말·표기변형을 쓴다. 검색 결과의 제목·본문·'댓글'에서 "
+    "같은 대상을 가리키는 실제 은어·동의어·표기변형(정식명↔줄임말↔영문표기)을 찾아내라. "
+    "1차 결과가 적거나 비어도 부분 힌트에서 은어를 유추해 재검색하라.\n"
+    "- 여러 번 검색해 충분히 후보를 모은 뒤, 이 주제를 포괄하는 최종 검색 키워드들을 골라라.\n"
+    "출력: 다른 설명 없이 검색 키워드 배열(JSON)만 반환하라. "
+    '예: ["젬이오", "젬", "gemini", "제미"]. 5~8개 이내로 핵심만.'
 )
 
 _TOOLS = [
@@ -137,24 +136,65 @@ def _tool_get_post(db_path, args: dict, seen: dict) -> str:
     return "\n".join(out)
 
 
-def _referenced_sources(answer: str, seen: dict) -> list[dict]:
-    """Citations actually referenced as [#num] in the answer (order preserved)."""
-    out, added = [], set()
-    for m in re.finditer(r"#(\d+)", answer or ""):
-        no = int(m.group(1))
-        if no in seen and no not in added:
-            added.add(no)
-            out.append(seen[no])
-    return out
+def _parse_term_list(text: str) -> list[str]:
+    """Pull a JSON array of keywords out of the discovery agent's final text."""
+    m = re.search(r"\[.*\]", text or "", re.DOTALL)
+    if m:
+        try:
+            arr = json.loads(m.group(0))
+            terms = [str(t).strip() for t in arr if str(t).strip()]
+            if terms:
+                # dedupe, preserve order, cap
+                seen, out = set(), []
+                for t in terms:
+                    if t.lower() not in seen:
+                        seen.add(t.lower())
+                        out.append(t)
+                return out[:8]
+        except (ValueError, json.JSONDecodeError):
+            pass
+    return []
 
 
-def answer_question(db_path: str | Path = db.DEFAULT_DB, *, question: str,
-                    max_turns: int = 6, model: str | None = None,
-                    **filters) -> dict:
-    """Answer a free-form question about the corpus, with cited evidence.
+def discover_keywords(db_path: str | Path, question: str, base: dict,
+                      max_turns: int = 6, model: str | None = None) -> list[str]:
+    """Agentically explore the corpus to find the best search terms (incl. slang).
 
-    ``filters`` (gallery_id / date_from / date_to) scope every search. Returns
-    ``{question, answer, citations[], used_posts, empty}`` or ``{error, ...}``.
+    Falls back to the question's own keywords if the agent yields nothing usable.
+    """
+    throwaway: dict[int, dict] = {}
+
+    def dispatch(name: str, args: dict) -> str:
+        try:
+            if name == "search_posts":
+                return _tool_search(db_path, args, base, throwaway)
+            if name == "get_post":
+                return _tool_get_post(db_path, args, throwaway)
+            return f"알 수 없는 툴: {name}"
+        except Exception as exc:  # noqa: BLE001
+            return f"툴 실행 오류: {exc}"
+
+    raw = llm.run_tools(_DISCOVER_SYS, f"질문: {question}", _TOOLS, dispatch,
+                        max_turns=max_turns, max_tokens=800, model=model)
+    terms = _parse_term_list(raw)
+    if terms:
+        return terms
+    # fallback: the question's own comma/or-separated terms, else its words
+    fallback = _parse_keywords(question)
+    if len(fallback) == 1 and " " in fallback[0]:
+        fallback = [w for w in re.split(r"\s+", fallback[0]) if len(w) >= 2]
+    return fallback[:8]
+
+
+def deep_report(db_path: str | Path = db.DEFAULT_DB, *, question: str,
+                max_turns: int = 6, max_posts: int = 60, model: str | None = None,
+                **filters) -> dict:
+    """Slang-aware structured deep report for a free-form question.
+
+    1) agentically discover search terms (incl. community slang), 2) run the
+    exhaustive map-reduce keyword report over them, 3) log the Q&A. Returns the
+    structured report augmented with ``question`` and ``search_terms``, or
+    ``{error, ...}``.
     """
     q = (question or "").strip()
     if not q:
@@ -165,33 +205,22 @@ def answer_question(db_path: str | Path = db.DEFAULT_DB, *, question: str,
                 "llm_status": st, "question": q}
 
     base = {k: filters.get(k) for k in ("gallery_id", "date_from", "date_to")}
-    seen: dict[int, dict] = {}
-
-    def dispatch(name: str, args: dict) -> str:
-        try:
-            if name == "search_posts":
-                return _tool_search(db_path, args, base, seen)
-            if name == "get_post":
-                return _tool_get_post(db_path, args, seen)
-            return f"알 수 없는 툴: {name}"
-        except Exception as exc:  # noqa: BLE001 - feed errors back to the model
-            return f"툴 실행 오류: {exc}"
-
     try:
-        answer = llm.run_tools(_SYS, f"질문: {q}", _TOOLS, dispatch,
-                               max_turns=max_turns, max_tokens=3000, model=model)
+        terms = discover_keywords(db_path, q, base, max_turns=max_turns, model=model)
+        if not terms:
+            return {"question": q, "search_terms": [], "empty": True, "post_count": 0,
+                    "analyzed_posts": 0, "overview": "검색어를 찾지 못했습니다.",
+                    "themes": [], "positives": [], "negatives": [], "issues": [], "quotes": []}
+        report = llm_report.keyword_report(
+            db_path, keyword=" or ".join(terms), source="post_comment",
+            max_posts=max_posts, model=model, **base)
     except llm.LLMError as exc:
         return {"error": str(exc), "question": q}
 
-    result = {
-        "question": q,
-        "answer": answer,
-        "citations": _referenced_sources(answer, seen),
-        "used_posts": len(seen),
-        "empty": len(seen) == 0,
-    }
-    _log_qa(db_path, result, base, model or llm.model_name())
-    return result
+    report["question"] = q
+    report["search_terms"] = terms
+    _log_qa(db_path, report, base, model or llm.model_name())
+    return report
 
 
 # ---- Q&A history log -------------------------------------------------------
@@ -203,19 +232,38 @@ def _ensure_log(conn) -> None:
     )
 
 
-def _log_qa(db_path, result: dict, filters: dict, model: str) -> None:
-    """Record one Q&A to the history log. Best-effort — never breaks the answer."""
+def _report_sources(report: dict) -> list[dict]:
+    """Flatten the report's evidence posts into a deduped citation list."""
+    out, seen = [], set()
+    for key in ("themes", "positives", "negatives", "issues"):
+        for it in report.get(key) or []:
+            for s in it.get("sources") or []:
+                if s.get("post_no") not in seen:
+                    seen.add(s.get("post_no"))
+                    out.append(s)
+    for q in report.get("quotes") or []:
+        no = q.get("post_no")
+        if no is not None and no not in seen and q.get("url"):
+            seen.add(no)
+            out.append({"post_no": no, "url": q.get("url"), "title": q.get("title")})
+    return out
+
+
+def _log_qa(db_path, report: dict, filters: dict, model: str) -> None:
+    """Record one report to the history log. Best-effort — never breaks the report."""
     try:
+        flt = dict(filters)
+        flt["search_terms"] = report.get("search_terms", [])
         with db.connect(db_path) as conn:
             _ensure_log(conn)
             conn.execute(
                 "INSERT INTO qa_log (created_at, question, answer, citations, "
                 "filters, model, used_posts) VALUES (?,?,?,?,?,?,?)",
                 (datetime.now().isoformat(timespec="seconds"),
-                 result["question"], result["answer"],
-                 json.dumps(result.get("citations", []), ensure_ascii=False),
-                 json.dumps({k: v for k, v in filters.items() if v}, ensure_ascii=False),
-                 model, result.get("used_posts", 0)))
+                 report.get("question", ""), report.get("overview", ""),
+                 json.dumps(_report_sources(report), ensure_ascii=False),
+                 json.dumps({k: v for k, v in flt.items() if v}, ensure_ascii=False),
+                 model, report.get("post_count", 0)))
             conn.commit()
     except Exception:  # noqa: BLE001 - logging is non-critical
         pass
