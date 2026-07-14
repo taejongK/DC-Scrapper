@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>커뮤니티 수집·분석 도구 — 팀 소개서</title>
+<style>
+  :root {
+    --bg: #f5f8fd; --surface: #ffffff; --surface-2: #eaf0fa; --text: #152030;
+    --muted: #566277; --faint: #7c889b; --border: #dbe4f2; --accent: #2f6ff0;
+    --accent-2: #1f57cc; --accent-soft: rgba(47,111,240,0.10);
+    --good: #1f9d63; --good-soft: rgba(31,157,99,0.12);
+    --warn-bg: rgba(196,120,12,0.10); --warn-border: rgba(196,120,12,0.34); --warn-text: #935906;
+    --shadow: 0 1px 2px rgba(20,32,48,.04), 0 10px 30px rgba(20,32,48,.06);
+    --sans: "Pretendard", system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Segoe UI", sans-serif;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, "Cascadia Code", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1422; --surface: #141d30; --surface-2: #1b2740; --text: #e6ecf7;
+      --muted: #9aa7bd; --faint: #74809a; --border: #2b3852; --accent: #6ea0ff;
+      --accent-2: #8fb6ff; --accent-soft: rgba(76,141,255,0.14);
+      --good: #4ade80; --good-soft: rgba(74,222,128,0.14);
+      --warn-bg: rgba(240,176,64,0.12); --warn-border: rgba(240,176,64,0.34); --warn-text: #f0b957;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 34px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg:#f5f8fd;--surface:#fff;--surface-2:#eaf0fa;--text:#152030;--muted:#566277;--faint:#7c889b;
+    --border:#dbe4f2;--accent:#2f6ff0;--accent-2:#1f57cc;--accent-soft:rgba(47,111,240,.10);
+    --good:#1f9d63;--good-soft:rgba(31,157,99,.12);
+    --warn-bg:rgba(196,120,12,.10);--warn-border:rgba(196,120,12,.34);--warn-text:#935906;
+    --shadow:0 1px 2px rgba(20,32,48,.04),0 10px 30px rgba(20,32,48,.06);
+  }
+  :root[data-theme="dark"] {
+    --bg:#0d1422;--surface:#141d30;--surface-2:#1b2740;--text:#e6ecf7;--muted:#9aa7bd;--faint:#74809a;
+    --border:#2b3852;--accent:#6ea0ff;--accent-2:#8fb6ff;--accent-soft:rgba(76,141,255,.14);
+    --good:#4ade80;--good-soft:rgba(74,222,128,.14);
+    --warn-bg:rgba(240,176,64,.12);--warn-border:rgba(240,176,64,.34);--warn-text:#f0b957;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 34px rgba(0,0,0,.3);
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans);
+    line-height: 1.72; font-size: 16px; -webkit-font-smoothing: antialiased; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+  .wrap { max-width: 940px; margin: 0 auto; padding: 0 24px; }
+  h2 { font-size: clamp(1.4rem, 3vw, 1.85rem); letter-spacing: -.01em; margin: 0; font-weight: 730; text-wrap: balance; }
+  h3 { font-size: 1.12rem; margin: 0 0 6px; font-weight: 680; }
+  p { margin: 12px 0; }
+  code { font-family: var(--mono); font-size: .87em; background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; }
+
+  /* hero */
+  header.hero { border-bottom: 1px solid var(--border);
+    background: radial-gradient(115% 130% at 85% -25%, var(--accent-soft), transparent 62%); }
+  .hero-in { padding: 62px 0 44px; }
+  .kicker { font-family: var(--mono); font-size: 12.5px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--accent); margin: 0 0 16px; }
+  h1 { font-size: clamp(2rem, 5.2vw, 3.1rem); line-height: 1.1; letter-spacing: -.025em;
+    margin: 0 0 16px; font-weight: 780; text-wrap: balance; }
+  .tagline { font-size: clamp(1.05rem, 2.2vw, 1.28rem); color: var(--muted); max-width: 60ch; margin: 0; }
+  .pipes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 26px; }
+  .pipe { font-family: var(--mono); font-size: 12px; color: var(--muted); background: var(--surface);
+    border: 1px solid var(--border); border-radius: 999px; padding: 6px 13px; }
+  .pipe b { color: var(--text); }
+
+  /* section rhythm */
+  section { padding: 46px 0; border-bottom: 1px solid var(--border); }
+  .sec-tag { font-family: var(--mono); font-size: 12px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--faint); margin: 0 0 10px; display: flex; align-items: center; gap: 10px; }
+  .sec-tag .num { color: var(--accent); font-weight: 700; }
+  .lead { font-size: 1.06rem; color: var(--text); max-width: 66ch; }
+
+  /* cards / grid */
+  .grid { display: grid; gap: 16px; margin-top: 24px; }
+  .g2 { grid-template-columns: 1fr 1fr; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 22px 24px; box-shadow: var(--shadow); }
+  .card.accent { border-left: 3px solid var(--accent); }
+  .card h3 .em { font-size: 1.15em; margin-right: 6px; }
+  .why { display: grid; gap: 12px; margin-top: 20px; }
+  .why .card { display: flex; gap: 16px; align-items: flex-start; padding: 18px 22px; }
+  .why .q { font-family: var(--mono); color: var(--accent); font-weight: 700; flex: none; font-size: 15px; }
+
+  /* labelled mini-structure inside analysis cards */
+  .mini { margin-top: 12px; display: grid; gap: 9px; }
+  .mini .row { display: grid; grid-template-columns: 76px 1fr; gap: 12px; align-items: baseline; }
+  .mini .k { font-family: var(--mono); font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--faint); padding-top: 2px; }
+  .mini .k.how { color: var(--accent); }
+  .mini .v { font-size: 14.5px; color: var(--text); }
+  .mini .v.muted { color: var(--muted); }
+
+  /* pipeline */
+  pre.flow { font-family: var(--mono); font-size: 13px; line-height: 1.85; background: var(--surface-2);
+    border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 10px;
+    padding: 16px 20px; margin: 20px 0; overflow-x: auto; color: var(--text); }
+  pre.flow .c { color: var(--faint); }
+  pre.flow .h { color: var(--accent); font-weight: 600; }
+
+  /* formula chip */
+  .formula { font-family: var(--mono); font-size: 13px; background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; margin: 12px 0; overflow-x: auto; }
+
+  .callout { display: flex; gap: 11px; margin: 16px 0 2px; padding: 13px 16px; font-size: 14px;
+    background: var(--warn-bg); border: 1px solid var(--warn-border); border-radius: 10px; }
+  .callout .i { color: var(--warn-text); font-weight: 700; font-family: var(--mono); flex: none; }
+  .callout b { color: var(--warn-text); }
+
+  ul.clean { margin: 12px 0 0; padding-left: 20px; }
+  ul.clean li { margin: 7px 0; }
+  ul.clean li::marker { color: var(--accent); }
+
+  .steps { list-style: none; counter-reset: s; margin: 20px 0 0; padding: 0; display: grid; gap: 14px; }
+  .steps > li { counter-increment: s; position: relative; padding-left: 46px; }
+  .steps > li::before { content: counter(s); position: absolute; left: 0; top: -2px; width: 30px; height: 30px;
+    border-radius: 9px; display: grid; place-items: center; font-family: var(--mono); font-weight: 700; font-size: 14px;
+    color: var(--accent); background: var(--accent-soft); border: 1px solid var(--border); }
+  .steps b { font-weight: 660; }
+
+  .tag { display: inline-block; font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 999px;
+    background: var(--good-soft); color: var(--good); border: 1px solid var(--border); vertical-align: middle; }
+
+  footer { padding: 30px 0 64px; color: var(--faint); font-size: 13.5px; }
+
+  @media (max-width: 720px) {
+    .g2 { grid-template-columns: 1fr; }
+    .mini .row { grid-template-columns: 60px 1fr; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    section, .hero-in { animation: rise .5s cubic-bezier(.2,.7,.3,1) both; }
+    @keyframes rise { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: none; } }
+  }
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="wrap hero-in">
+    <p class="kicker">Team Introduction</p>
+    <h1>커뮤니티 여론을<br>수집하고, 물어보면 답하는 도구</h1>
+    <p class="tagline">DCInside 갤러리의 글·댓글을 주기적으로 모아 사라지지 않는 데이터로 쌓고, 웹 대시보드에서 <b>무엇이 화제인지</b> 한눈에 보고 <b>자연어로 질문해 근거 있는 리포트</b>를 받는 사내 도구입니다.</p>
+    <div class="pipes">
+      <span class="pipe"><b>수집</b> dc_scraper</span>
+      <span class="pipe"><b>저장</b> SQLite</span>
+      <span class="pipe"><b>분석</b> analysis</span>
+      <span class="pipe"><b>대시보드</b> FastAPI + Web</span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <!-- 1. 목적 -->
+  <section><div class="wrap">
+    <p class="sec-tag"><span class="num">01</span> 어떤 목적으로 만들었나</p>
+    <h2>커뮤니티 여론을 "관측 가능한 데이터"로</h2>
+    <p class="lead">커뮤니티 반응은 빠르게 흘러가고 곧 사라집니다. 이 도구는 그 흐름을 <b>주기적으로 수집·축적</b>해, 시간이 지나도 되짚어 볼 수 있는 데이터로 만들고 — 그 위에서 <b>화제·분위기·활동 패턴</b>을 파악하고 <b>특정 주제의 여론을 깊이 있게 정리</b>하는 것을 목표로 합니다.</p>
+    <div class="grid g2">
+      <div class="card"><h3><span class="em">🗂️</span>축적</h3><p class="mini"><span class="v muted">지정한 날짜·기간의 글을 본문·댓글까지 빠짐없이 모아 DB로 남긴다. 재수집해도 중복 없이 최신 상태를 유지한다.</span></p></div>
+      <div class="card"><h3><span class="em">🔭</span>관측</h3><p class="mini"><span class="v muted">언제 활발한지, 오늘 뭐가 터졌는지, 어떤 단어가 도는지를 대시보드에서 즉시 본다.</span></p></div>
+      <div class="card"><h3><span class="em">🧠</span>심층 이해</h3><p class="mini"><span class="v muted">"이 주제 반응 어때?"라고 물으면 AI가 스스로 관련 글을 찾아 근거와 함께 여론을 정리한다.</span></p></div>
+      <div class="card"><h3><span class="em">🖱️</span>누구나</h3><p class="mini"><span class="v muted">수집·조회·분석을 코드 없이 웹 UI에서 다룬다.</span></p></div>
+    </div>
+  </div></section>
+
+  <!-- 2. 왜 -->
+  <section><div class="wrap">
+    <p class="sec-tag"><span class="num">02</span> 왜 만들었나</p>
+    <h2>흩어지고 사라지는 여론, 손으로는 못 따라간다</h2>
+    <div class="why">
+      <div class="card"><span class="q">Q1</span><div><b>데이터가 휘발된다.</b> 글·댓글은 시간이 지나면 묻히거나 삭제된다. 사후에 "그때 반응이 어땠지?"를 확인할 방법이 없다. → 주기 수집으로 <b>타임캡슐</b>을 만든다.</div></div>
+      <div class="card"><span class="q">Q2</span><div><b>눈으로 훑기엔 양이 많다.</b> 하루 수백 글·수천 댓글을 사람이 다 읽을 수 없다. → 통계·시계열·키워드로 <b>큰 그림</b>을 먼저 잡는다.</div></div>
+      <div class="card"><span class="q">Q3</span><div><b>은어·맥락 때문에 검색이 안 통한다.</b> 커뮤니티는 표준어 대신 은어를 쓴다("젬이오"를 "젬·젬식"이라 부른다). 단순 검색은 절반을 놓친다. → AI가 <b>실제 쓰는 은어까지 찾아</b> 검색·정리한다.</div></div>
+      <div class="card"><span class="q">Q4</span><div><b>인사이트까지 자동화하고 싶다.</b> 수치만으론 "무슨 얘기가 오갔는지"를 모른다. → LLM이 근거 글을 인용하며 <b>여론 리포트</b>를 써준다.</div></div>
+    </div>
+  </div></section>
+
+  <!-- 3. 기능 -->
+  <section><div class="wrap">
+    <p class="sec-tag"><span class="num">03</span> 어떤 기능이 있나</p>
+    <h2>수집 → 저장 → 분석·리포트, 세 층</h2>
+    <p class="lead">브라우저 대시보드는 네 개 탭으로 나뉩니다. 아래 3.1은 데이터가 <b>어떻게 모이는지</b>, 3.2는 모인 데이터를 <b>어떤 알고리즘으로 분석·리포트하는지</b>를 다룹니다.</p>
+    <div class="grid g2">
+      <div class="card accent"><h3>📥 수집 탭</h3><p class="mini"><span class="v muted">갤러리·날짜·기간을 지정해 수집을 실행하고 진행 상황·이력을 본다.</span></p></div>
+      <div class="card accent"><h3>📋 글 목록 탭</h3><p class="mini"><span class="v muted">수집된 글을 검색·정렬·필터하고, 글을 열어 본문·댓글을 본다.</span></p></div>
+      <div class="card accent"><h3>📊 분석 탭</h3><p class="mini"><span class="v muted">개요 지표 · 이슈 버스트 · 요일×시간 히트맵 · 워드클라우드 · 인기글 랭킹.</span></p></div>
+      <div class="card accent"><h3>🧠 리포트 탭</h3><p class="mini"><span class="v muted">자연어 질문 → AI가 은어까지 검색어를 발굴해 전수 분석한 구조화 리포트.</span></p></div>
+    </div>
+  </div></section>
+
+  <!-- 3.1 스크래핑 -->
+  <section><div class="wrap">
+    <p class="sec-tag"><span class="num">3.1</span> 스크래핑 알고리즘</p>
+    <h2>날짜 범위를 "정확히" 훑고, 삭제까지 반영한다</h2>
+    <p class="lead">핵심은 두 가지 — <b>범위를 넘치거나 모자라지 않게 걷기</b>, 그리고 재수집 시 <b>추가·수정·삭제를 모두 반영</b>해 항상 원본과 같은 상태를 유지하기.</p>
+
+    <ol class="steps">
+      <li><b>목록 걷기 (범위 커버)</b> — 갤러리 목록은 최신순이다. 페이지를 넘기며 지정 기간 <code>[시작, 끝]</code>에 드는 글만 대상에 담는다. 기간보다 <b>새 글</b>은 건너뛰되 멈추지 않고(예: 과거를 수집할 때 오늘 글), 기간보다 <b>오래된 글</b>이 나오는 페이지에 닿으면 "범위를 지났다"고 보고 멈춘다. 공지 글머리는 제외.</li>
+      <li><b>상세 수집</b> — 각 대상 글의 본문 페이지를 가져와 본문 텍스트·추천/비추·조회수·성인여부를 파싱한다. 성인(NSFW) 글은 로그인이 필요해 본문을 못 받으므로 <b>메타만 저장하고 성인 플래그</b>를 세운다.</li>
+      <li><b>댓글 수집</b> — 댓글 전용 엔드포인트를 페이지 끝까지 순회해 대댓글 계층까지 모은다.</li>
+      <li><b>멱등 저장 (upsert)</b> — 글은 <code>글번호</code>, 댓글은 <code>(글번호, 댓글번호)</code>가 고유 키. 같은 게 다시 오면 <b>새 행을 쌓지 않고 최신 값으로 덮어쓴다</b>. 그래서 재수집이 곧 "추천·댓글 변동분 업데이트" 역할을 한다.</li>
+      <li><b>삭제 반영</b> — 재수집 때 사라진 <b>댓글</b>은 DB에서 제거한다. 또 목록 걷기가 기간을 <b>완전히 커버</b>했다면, 살아있는 목록에 없는 저장된 <b>글</b>은 삭제/블라인드로 보고 제거한다. <span class="tag">safe</span> 단, 페이지 상한에 걸리거나 일부 실패한 회차에서는 "안 보임 ≠ 삭제"이므로 삭제 스윕을 건너뛴다(오삭제 방지).</li>
+    </ol>
+
+    <div class="callout"><span class="i">⚙</span><div><b>매너 수집.</b> 요청 사이에 <b>랜덤 딜레이</b>를 두고, 실패 시 <b>지수 백오프</b>로 재시도하며, 403/429(차단 신호)를 만나면 <b>쿨다운</b> 후 재개한다. 개별 글 하나가 실패해도 전체 수집은 멈추지 않는다.</div></div>
+  </div></section>
+
+  <!-- 3.2 분석별 -->
+  <section><div class="wrap">
+    <p class="sec-tag"><span class="num">3.2</span> 각 분석·리포트의 알고리즘</p>
+    <h2>지표는 정확하게, 리포트는 은어까지</h2>
+    <p class="lead">모든 분석은 상단 <b>공통 필터</b>(갤러리·기간·키워드)로 범위를 좁힐 수 있고, 필터가 없으면 수집된 전체가 대상입니다. 키워드 기반 분석은 <b>공통 토크나이저</b>(아래)를 공유합니다.</p>
+
+    <div class="card" style="margin-top:22px">
+      <h3>🧩 공통 토크나이저 — 명사 추출</h3>
+      <p class="mini"><span class="v muted"><b>워드클라우드·이슈 버스트</b>가 공유. ① 본문에 붙은 인라인 HTML/CSS(<code>&lt;div&gt;</code>·<code>px</code>·<code>font</code> 등, AI채팅 갤러리 특성상 상태창 템플릿이 텍스트로 섞임)를 <b>정리</b> → ② 형태소 분석기로 <b>명사(일반·고유·영문)</b>만 채택 → ③ 2자 이상 + 불용어 제외. 원본 글은 그대로 두고 분석 시점에만 정리한다.</span></p>
+    </div>
+
+    <!-- A -->
+    <div class="card accent" style="margin-top:16px">
+      <h3><span class="em">📇</span>A. 개요 지표</h3>
+      <div class="mini">
+        <div class="row"><span class="k">무엇을</span><span class="v">현재 필터 범위의 한눈 요약.</span></div>
+        <div class="row"><span class="k how">어떻게</span><span class="v">글 수 · 댓글 수 · 고유 작성자 수 · 평균 댓글/조회 · 성인글 수를 단순 집계. 가중치·모델 없음.</span></div>
+      </div>
+    </div>
+
+    <!-- B -->
+    <div class="card accent" style="margin-top:16px">
+      <h3><span class="em">🔥</span>B. 이슈 버스트 — 급상승 &amp; 신규 등장</h3>
+      <div class="mini">
+        <div class="row"><span class="k">무엇을</span><span class="v">"오늘 갑자기 튀어나온 단어"를 찾는다.</span></div>
+        <div class="row"><span class="k how">어떻게</span><span class="v">TF-IDF가 아니라 <b>시간축 비중 비교</b>다. 각 글 제목+본문에서 명사를 날짜별로 센 뒤, 대상일에 그 단어가 차지하는 비중을 과거 며칠의 비중과 비교한다.</span></div>
+      </div>
+      <div class="formula">버스트 = (오늘 그 단어 비중) ÷ (과거 비중 · 라플라스 스무딩)</div>
+      <ul class="clean">
+        <li><b>급상승</b> = 이 비율이 높은 순.  <b>신규 등장</b> = 과거엔 아예 없다가 오늘 나온 단어(빈도순).</li>
+        <li>스무딩(＋보정)으로 "과거에 없던 단어가 무한대로 튀는" 것을 막아 유한한 점수를 준다.</li>
+      </ul>
+      <div class="callout"><span class="i">!</span><div>문턱이 "하루 2회 이상"뿐이라, <b>긴 글 하나가 어떤 단어를 두 번 언급</b>해도 후보가 된다. "몇 개의 서로 다른 글에서 나왔는지"는 아직 보지 않아 한 글 편중에 취약하다(개선 여지). 댓글은 연도 정보가 없어 제외.</div></div>
+    </div>
+
+    <!-- C -->
+    <div class="card accent" style="margin-top:16px">
+      <h3><span class="em">🗓️</span>C. 요일 × 시간 히트맵</h3>
+      <div class="mini">
+        <div class="row"><span class="k">무엇을</span><span class="v">커뮤니티가 언제 활발한지 한눈에.</span></div>
+        <div class="row"><span class="k how">어떻게</span><span class="v">각 글의 작성시각을 <b>(요일, 시)</b>로 묶어 글 수를 센다 → 7×24 행렬. 값이 클수록 진한 색으로 칠한다.</span></div>
+      </div>
+    </div>
+
+    <!-- D -->
+    <div class="card accent" style="margin-top:16px">
+      <h3><span class="em">☁️</span>D. 워드클라우드</h3>
+      <div class="mini">
+        <div class="row"><span class="k">무엇을</span><span class="v">자주 나온 단어를 크기로 시각화.</span></div>
+        <div class="row"><span class="k how">어떻게</span><span class="v">공통 토크나이저로 명사를 뽑아 <b>순수 빈도</b>를 세고 상위 N을 크기 ∝ 빈도로 그린다. (TF-IDF 같은 가중치 없음)</span></div>
+      </div>
+    </div>
+
+    <!-- E -->
+    <div class="card accent" style="margin-top:16px">
+      <h3><span class="em">🏆</span>E. 인기글 랭킹</h3>
+      <div class="mini">
+        <div class="row"><span class="k">무엇을</span><span class="v">지표 기준 상위 글.</span></div>
+        <div class="row"><span class="k how">어떻게</span><span class="v">선택 지표(추천·조회·댓글 수)로 <b>내림차순 정렬 후 상위 N</b>. 단순 정렬 뷰.</span></div>
+      </div>
+    </div>
+
+    <!-- F: 심층 리포트 -->
+    <div class="card" style="margin-top:26px; border-left:3px solid var(--accent)">
+      <h3><span class="em">🧠</span>F. 심층 리포트 <span class="tag">AI 에이전트</span></h3>
+      <p class="mini"><span class="v muted">가장 핵심적인 기능. 자연어 질문을 받아, <b>AI가 스스로 검색어를 찾아가며</b> 관련 글을 전수 분석하고 근거를 인용한 <b>구조화 리포트</b>를 만든다. 단순 키워드 검색이 못 잡는 <b>은어</b>를 극복하는 게 설계의 핵심이다.</span></p>
+
+      <ol class="steps" style="margin-top:22px">
+        <li><b>검색어 발굴 (은어 확장)</b> — AI가 질문의 표준어로 먼저 검색한 뒤, <b>검색 결과의 실제 표현(특히 댓글)에서 커뮤니티가 쓰는 은어·동의어·표기변형을 찾아낸다</b>. 예: "젬이오" → <code>젬</code>·<code>젬식</code>·<code>Gemini</code>·<code>눅눅</code>(눅눅한 출력)·<code>급발진</code>(캐릭터 붕괴). 정보검색의 <b>의사 적합성 피드백(PRF)</b> 기법이다.</li>
+        <li><b>전수 수집</b> — 발굴한 검색어로 매칭되는 글을 (성인글 제외) 폭넓게 모아, 각 글의 제목·본문·댓글을 분석용 문서로 만든다.</li>
+        <li><b>Map-Reduce 요약</b> — 문서가 많으면 여러 묶음으로 나눠 각각 요약(map)한 뒤, 부분 요약들을 하나로 종합(reduce)한다. 근거가 된 글 번호는 합쳐서 보존한다.</li>
+        <li><b>구조화 리포트</b> — <b>개요 · 분위기 · 주요 주제 · 긍정 · 부정 · 쟁점 · 대표 반응</b>으로 정리하고, 각 항목마다 <b>근거 글 링크</b>를 붙여 원문으로 검증할 수 있게 한다.</li>
+        <li><b>기록</b> — 질문·리포트·근거·검색어를 DB에 남겨 히스토리로 되짚어 본다.</li>
+      </ol>
+
+      <pre class="flow"><span class="c"># 파이프라인 한눈에</span>
+질문  <span class="h">"젬이오 검열 반응 어때?"</span>
+  │
+  ├─ <span class="h">① 에이전트 검색·은어 발굴</span>  → [젬이오, 젬, 젬식, 눅눅, 급발진, 검열]
+  ├─ <span class="h">② 전수 수집</span>              → 매칭 306글 → 상위 60 분석
+  ├─ <span class="h">③ map-reduce 요약</span>
+  └─ <span class="h">④ 구조화 리포트 + 근거링크</span>  → 개요·긍정·부정·쟁점·인용
+  ↳ <span class="c">DB 로깅</span></pre>
+
+      <div class="callout"><span class="i">◆</span><div>이 방식은 무거운 에이전트 프레임워크(LangGraph)나 지식그래프(GraphRAG) 없이 <b>얇은 도구호출 루프</b>로 구현해, 의존성을 늘리지 않으면서 "스스로 검색해 답하는" 동작을 얻는다. 검색은 현재 <b>키워드 부분일치</b> 기반이며, 동의어·표현 다양성을 더 넓히려면 임베딩 기반 의미검색이 향후 후보다.</div></div>
+    </div>
+  </div></section>
+
+  <footer><div class="wrap">
+    구성: <code>dc_scraper</code>(수집) · <code>analysis</code>(분석·리포트 엔진) · <code>webapp</code>(FastAPI 대시보드) · <code>SQLite</code>. LLM 백엔드는 OpenRouter/Anthropic 자동 감지, 모델은 환경변수로 교체.
+  </div></footer>
+</main>
+</body>
+</html>
