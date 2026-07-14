@@ -21,6 +21,13 @@ def test_search_tool_finds_and_records(sample_db):
     assert seen[1]["title"].startswith("에덴")
 
 
+def test_search_tool_includes_comment_preview(sample_db):
+    # comments carry slang; search results must surface a preview for expansion
+    out = llm_agent._tool_search(sample_db, {"keywords": "에덴"}, {}, {})
+    assert "댓글:" in out
+    assert "추천" in out  # post 1's comment "나도 좋아 완전 추천" is previewed
+
+
 def test_search_tool_no_match(sample_db):
     out = llm_agent._tool_search(sample_db, {"keywords": "존재하지않는단어zzz"}, {}, {})
     assert "찾지 못했" in out
@@ -75,6 +82,33 @@ def test_answer_question_only_cites_referenced(sample_db, with_key):
     assert r["citations"] == []          # but none were referenced in the answer
 
 
+def test_answer_question_logs_to_db(sample_db, with_key):
+    llm.set_tool_loop_override(
+        lambda **kw: (kw["dispatch"]("search_posts", {"keywords": "에덴"}),
+                      "에덴 반응 긍정 [#1]")[1])
+    llm_agent.answer_question(sample_db, question="에덴 여론?", gallery_id="aichatting")
+    hist = llm_agent.recent_questions(sample_db)
+    assert hist and hist[0]["question"] == "에덴 여론?"
+    assert "긍정" in hist[0]["answer"]
+    assert hist[0]["citations"][0]["post_no"] == 1
+    assert hist[0]["used_posts"] == 1
+
+
+def test_recent_questions_newest_first(sample_db, with_key):
+    llm.set_tool_loop_override(lambda **kw: "답")
+    llm_agent.answer_question(sample_db, question="첫번째")
+    llm_agent.answer_question(sample_db, question="두번째")
+    hist = llm_agent.recent_questions(sample_db, limit=5)
+    assert hist[0]["question"] == "두번째" and hist[1]["question"] == "첫번째"
+
+
+def test_failed_answer_not_logged(sample_db, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    llm_agent.answer_question(sample_db, question="키없음")   # returns error, no log
+    assert all(h["question"] != "키없음" for h in llm_agent.recent_questions(sample_db))
+
+
 def test_answer_question_empty_question(sample_db):
     assert llm_agent.answer_question(sample_db, question="   ")["error"]
 
@@ -111,3 +145,12 @@ def test_api_ask(client):
 
 def test_api_ask_validation(client):
     assert client.post("/api/analysis/ask", json={"question": "  "}).status_code == 400
+
+
+def test_api_ask_history(client):
+    llm.set_tool_loop_override(lambda **kw: "답변입니다 [#1]")
+    client.post("/api/analysis/ask", json={"question": "기록되나?"})
+    r = client.get("/api/analysis/ask_history?limit=5")
+    assert r.status_code == 200
+    hist = r.json()
+    assert hist and hist[0]["question"] == "기록되나?"

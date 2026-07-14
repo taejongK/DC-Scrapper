@@ -12,7 +12,9 @@ is a later phase.
 
 from __future__ import annotations
 
+import json
 import re
+from datetime import datetime
 from pathlib import Path
 
 from . import db, llm
@@ -21,6 +23,7 @@ from .llm_report import _fetch_comments, _parse_keywords, _truncate
 _SEARCH_LIMIT = 15
 _MAX_SEARCH_LIMIT = 30
 _BODY_CHARS = 1500
+_COMMENT_PREVIEW_POSTS = 8   # how many top hits show comment previews (slang source)
 
 _SYS = (
     "너는 디시인사이드 커뮤니티 수집 데이터를 분석하는 리서치 에이전트다. "
@@ -28,7 +31,11 @@ _SYS = (
     "한국어로 답한다.\n"
     "원칙:\n"
     "- 먼저 search_posts로 관련 글을 찾고, 필요하면 get_post로 본문·댓글을 확인한 뒤 답하라.\n"
-    "- 한 번의 검색으로 부족하면 검색어를 바꿔 여러 번 검색하라.\n"
+    "- 【검색어 확장 필수】 커뮤니티는 표준어 대신 은어·줄임말·표기변형을 쓴다. 1차 검색은 "
+    "질문의 표준어로 시작하되, 검색 결과의 제목·본문·'댓글'에서 같은 대상을 가리키는 실제 "
+    "은어·동의어·표기변형(예: 정식명↔줄임말↔영문표기)을 찾아, 최초 질문 의도에 맞는 추가 "
+    "검색어로 최소 한 번 더 확장 검색한 뒤 답하라. 1차 결과가 적거나 비어도 부분 힌트에서 "
+    "은어를 유추해 재검색하라.\n"
     "- 슬랭·은어·반어를 감안해 실제 뉘앙스를 읽어라.\n"
     "- 답의 각 핵심 주장 옆에 근거가 된 글 번호를 [#글번호] 형식으로 표기하라.\n"
     "- 데이터에서 확인되지 않는 내용은 지어내지 말고 '해당 데이터에서는 확인되지 않는다'고 밝혀라.\n"
@@ -39,8 +46,9 @@ _TOOLS = [
     {
         "name": "search_posts",
         "description": (
-            "키워드로 글을 검색해 목록(글번호·날짜·추천·댓글수·제목·본문요약)을 돌려준다. "
-            "여론·화제·평가를 파악하려면 먼저 이 툴로 관련 글을 찾아라."),
+            "키워드로 글을 검색해 목록(글번호·날짜·추천·댓글수·제목·본문요약·댓글 미리보기)을 "
+            "돌려준다. 댓글 미리보기에는 커뮤니티 은어가 자주 담기니, 이를 보고 추가 검색어를 "
+            "만들어 확장 검색하는 데 활용하라. 여러 번 호출해도 된다."),
         "parameters": {
             "type": "object",
             "properties": {
@@ -89,6 +97,10 @@ def _tool_search(db_path, args: dict, base: dict, seen: dict) -> str:
         posts = posts.sort_values(col, ascending=False)
     limit = max(1, min(int(args.get("limit") or _SEARCH_LIMIT), _MAX_SEARCH_LIMIT))
     posts = posts.head(limit)
+    # Comments are where community slang/은어 lives — surface a couple per post so
+    # the agent can mine real vernacular from the hits and expand its next search.
+    nos = [int(r["post_no"]) for _, r in posts.iterrows()]
+    cmts = _fetch_comments(db_path, nos[:_COMMENT_PREVIEW_POSTS])
     lines = [f"'{' / '.join(kws)}' 매칭 {total}글 중 상위 {len(posts)}글 ({sort} 정렬):"]
     for _, r in posts.iterrows():
         no = int(r["post_no"])
@@ -97,7 +109,11 @@ def _tool_search(db_path, args: dict, base: dict, seen: dict) -> str:
         head = (f"[글 #{no}] {str(r.get('posted_at'))[:16]} "
                 f"추천{int(r.get('recommend') or 0)} 댓{int(r.get('comment_cnt') or 0)} | "
                 f"{_truncate(r.get('title'), 100)}")
-        lines.append(head + (f" | {body}" if body else ""))
+        line = head + (f" | {body}" if body else "")
+        preview = [_truncate(c, 50) for c in cmts.get(no, [])[:2] if c.strip()]
+        if preview:
+            line += "  · 댓글: " + " / ".join(preview)
+        lines.append(line)
     return "\n".join(lines)
 
 
@@ -167,10 +183,58 @@ def answer_question(db_path: str | Path = db.DEFAULT_DB, *, question: str,
     except llm.LLMError as exc:
         return {"error": str(exc), "question": q}
 
-    return {
+    result = {
         "question": q,
         "answer": answer,
         "citations": _referenced_sources(answer, seen),
         "used_posts": len(seen),
         "empty": len(seen) == 0,
     }
+    _log_qa(db_path, result, base, model or llm.model_name())
+    return result
+
+
+# ---- Q&A history log -------------------------------------------------------
+def _ensure_log(conn) -> None:
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS qa_log ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT, question TEXT, "
+        "answer TEXT, citations TEXT, filters TEXT, model TEXT, used_posts INTEGER)"
+    )
+
+
+def _log_qa(db_path, result: dict, filters: dict, model: str) -> None:
+    """Record one Q&A to the history log. Best-effort — never breaks the answer."""
+    try:
+        with db.connect(db_path) as conn:
+            _ensure_log(conn)
+            conn.execute(
+                "INSERT INTO qa_log (created_at, question, answer, citations, "
+                "filters, model, used_posts) VALUES (?,?,?,?,?,?,?)",
+                (datetime.now().isoformat(timespec="seconds"),
+                 result["question"], result["answer"],
+                 json.dumps(result.get("citations", []), ensure_ascii=False),
+                 json.dumps({k: v for k, v in filters.items() if v}, ensure_ascii=False),
+                 model, result.get("used_posts", 0)))
+            conn.commit()
+    except Exception:  # noqa: BLE001 - logging is non-critical
+        pass
+
+
+def recent_questions(db_path: str | Path = db.DEFAULT_DB, *, limit: int = 20) -> list[dict]:
+    """Most recent Q&A log entries, newest first (citations parsed back to list)."""
+    try:
+        with db.connect(db_path) as conn:
+            _ensure_log(conn)
+            rows = conn.execute(
+                "SELECT id, created_at, question, answer, citations, model, used_posts "
+                "FROM qa_log ORDER BY id DESC LIMIT ?", (max(1, min(limit, 100)),)
+            ).fetchall()
+    except Exception:  # noqa: BLE001
+        return []
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["citations"] = json.loads(d.get("citations") or "[]")
+        out.append(d)
+    return out

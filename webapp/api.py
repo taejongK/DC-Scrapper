@@ -243,6 +243,12 @@ def api_ask(req: AskRequest) -> dict:
         gallery_id=req.gallery_id, date_from=req.date_from, date_to=req.date_to)
 
 
+@router.get("/analysis/ask_history")
+def api_ask_history(limit: int = 20) -> list[dict]:
+    """Recent conversational-analysis questions and answers (newest first)."""
+    return llm_agent.recent_questions(db_path(), limit=limit)
+
+
 @router.get("/meta/galleries")
 def api_galleries() -> list[dict]:
     """Distinct galleries + date bounds present in the DB (for filter UI)."""
