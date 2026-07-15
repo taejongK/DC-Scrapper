@@ -28,7 +28,9 @@ CREATE TABLE IF NOT EXISTS posts (
     body_html    TEXT,
     is_adult     INTEGER DEFAULT 0,
     url          TEXT NOT NULL,
-    scraped_at   TEXT NOT NULL
+    scraped_at   TEXT NOT NULL,
+    is_deleted   INTEGER DEFAULT 0,
+    deleted_at   TEXT
 );
 
 CREATE TABLE IF NOT EXISTS comments (
@@ -42,6 +44,8 @@ CREATE TABLE IF NOT EXISTS comments (
     posted_at    TEXT,
     is_reply     INTEGER DEFAULT 0,
     scraped_at   TEXT NOT NULL,
+    is_deleted   INTEGER DEFAULT 0,
+    deleted_at   TEXT,
     UNIQUE(post_no, comment_no)
 );
 
@@ -78,6 +82,13 @@ class Database:
         cols = {r[1] for r in self.conn.execute("PRAGMA table_info(posts)")}
         if "is_adult" not in cols:
             self.conn.execute("ALTER TABLE posts ADD COLUMN is_adult INTEGER DEFAULT 0")
+        for table in ("posts", "comments"):
+            have = {r[1] for r in self.conn.execute(f"PRAGMA table_info({table})")}
+            if "is_deleted" not in have:
+                self.conn.execute(
+                    f"ALTER TABLE {table} ADD COLUMN is_deleted INTEGER DEFAULT 0")
+            if "deleted_at" not in have:
+                self.conn.execute(f"ALTER TABLE {table} ADD COLUMN deleted_at TEXT")
 
     def close(self) -> None:
         self.conn.close()
@@ -97,6 +108,8 @@ class Database:
         ]
         placeholders = ", ".join(f":{c}" for c in cols)
         updates = ", ".join(f"{c}=excluded.{c}" for c in cols if c != "post_no")
+        # we just fetched it alive, so any earlier "deleted upstream" mark is stale
+        updates += ", is_deleted=0, deleted_at=NULL"
         row = {c: post.get(c) for c in cols}
         self.conn.execute(
             f"INSERT INTO posts ({', '.join(cols)}) VALUES ({placeholders}) "
@@ -112,6 +125,7 @@ class Database:
         placeholders = ", ".join(f":{c}" for c in cols)
         updates = ", ".join(f"{c}=excluded.{c}" for c in cols
                             if c not in ("post_no", "comment_no"))
+        updates += ", is_deleted=0, deleted_at=NULL"   # seen alive again
         row = {c: comment.get(c) for c in cols}
         self.conn.execute(
             f"INSERT INTO comments ({', '.join(cols)}) VALUES ({placeholders}) "
@@ -148,26 +162,33 @@ class Database:
         )
         return int(cur.fetchone()[0])
 
-    # -- deletion reflection -------------------------------------------------
-    def prune_comments(self, post_no: int, kept_comment_nos: list[int]) -> int:
-        """Delete stored comments of ``post_no`` that are no longer present.
+    # -- deletion reflection (soft: we archive, never destroy) ----------------
+    # The point of this collector is to keep what the source loses, so upstream
+    # deletions are *marked*, not removed — and "was deleted upstream" is itself
+    # a useful signal (deleted posts are often the most contentious ones).
+    def mark_comments_deleted(self, post_no: int, kept_comment_nos: list[int],
+                              when: str) -> int:
+        """Flag stored comments of ``post_no`` that are no longer present upstream.
 
         ``kept_comment_nos`` is the set of comment numbers seen in the latest
-        fetch; anything else for this post is assumed removed upstream and is
-        deleted. Call this only when comments were actually re-fetched, never on
-        an adult/skipped post (an empty ``kept`` list would wipe the thread).
-        Returns the number of rows deleted.
+        fetch; anything else for this post is assumed removed upstream. Call this
+        only when comments were actually re-fetched, never on an adult/skipped
+        post (an empty ``kept`` list would flag the whole thread). Already-flagged
+        rows keep their original ``deleted_at``. Returns rows newly flagged.
         """
         kept = [int(x) for x in kept_comment_nos if x is not None]
         if kept:
             placeholders = ", ".join("?" * len(kept))
             cur = self.conn.execute(
-                f"DELETE FROM comments WHERE post_no=? AND comment_no NOT IN ({placeholders})",
-                [post_no, *kept],
+                "UPDATE comments SET is_deleted=1, deleted_at=? "
+                f"WHERE post_no=? AND comment_no NOT IN ({placeholders}) "
+                "AND COALESCE(is_deleted,0)=0",
+                [when, post_no, *kept],
             )
         else:
             cur = self.conn.execute(
-                "DELETE FROM comments WHERE post_no=?", (post_no,)
+                "UPDATE comments SET is_deleted=1, deleted_at=? "
+                "WHERE post_no=? AND COALESCE(is_deleted,0)=0", (when, post_no)
             )
         return cur.rowcount
 
@@ -180,16 +201,20 @@ class Database:
         )
         return {int(r[0]) for r in cur.fetchall()}
 
-    def delete_posts(self, post_nos: list[int]) -> int:
-        """Delete the given posts and their comments. Returns posts deleted."""
+    def mark_posts_deleted(self, post_nos: list[int], when: str) -> int:
+        """Flag the given posts as gone upstream (deleted/blinded), keeping the row.
+
+        Their comments are kept as-is: the post's own flag already records that
+        the thread vanished. Already-flagged posts keep their original
+        ``deleted_at``. Returns the number of posts newly flagged.
+        """
         ids = [int(x) for x in post_nos]
         if not ids:
             return 0
         placeholders = ", ".join("?" * len(ids))
-        self.conn.execute(
-            f"DELETE FROM comments WHERE post_no IN ({placeholders})", ids
-        )
         cur = self.conn.execute(
-            f"DELETE FROM posts WHERE post_no IN ({placeholders})", ids
+            f"UPDATE posts SET is_deleted=1, deleted_at=? "
+            f"WHERE post_no IN ({placeholders}) AND COALESCE(is_deleted,0)=0",
+            [when, *ids],
         )
         return cur.rowcount

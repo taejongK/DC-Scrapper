@@ -151,8 +151,11 @@ async function fetchPosts() {
   data.items.forEach((r) => {
     const tr = document.createElement("tr");
     const adult = r.is_adult ? ' <span class="badge">🔞</span>' : "";
+    // kept in the archive, but gone from the source — often the contentious ones
+    const gone = r.is_deleted
+      ? ` <span class="badge gone" title="원본에서 삭제됨${r.deleted_at ? " · 확인 " + r.deleted_at : ""}">🗑️ 삭제됨</span>` : "";
     tr.innerHTML = `<td>${r.post_no}</td><td>${r.category||""}</td>
-      <td class="clickable">${escapeHtml(r.title)}${adult}</td>
+      <td class="clickable">${escapeHtml(r.title)}${adult}${gone}</td>
       <td>${escapeHtml(r.writer||"")}</td><td>${(r.posted_at||"").slice(5,16)}</td>
       <td class="num">${fmt(r.view_count)}</td><td class="num">${fmt(r.recommend)}</td>
       <td class="num">${fmt(r.comment_cnt)}</td>`;

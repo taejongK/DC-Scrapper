@@ -115,7 +115,7 @@ def list_posts(
     total = conn.execute(f"SELECT COUNT(*) FROM posts{where}", params).fetchone()[0]
     rows = conn.execute(
         f"SELECT post_no,title,writer,posted_at,view_count,recommend,dislike,"
-        f"comment_cnt,category,is_adult,url FROM posts{where} "
+        f"comment_cnt,category,is_adult,is_deleted,deleted_at,url FROM posts{where} "
         f"ORDER BY {sort} {order.upper()} LIMIT ? OFFSET ?",
         params + [limit, offset],
     ).fetchall()

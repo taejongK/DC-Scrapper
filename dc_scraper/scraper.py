@@ -55,7 +55,7 @@ def collect(
     run_id = db.start_run(gallery_id, range_label, started_at) if db else None
 
     posts_found = posts_saved = comments_saved = 0
-    posts_deleted = comments_deleted = 0
+    posts_marked_deleted = comments_marked_deleted = 0
     status = "success"
     error: str | None = None
 
@@ -71,7 +71,7 @@ def collect(
                 _process_post(fetcher, db, meta, gallery_id, with_comments)
                 posts_saved += 1
                 comments_saved += meta.get("_comment_saved", 0)
-                comments_deleted += meta.get("_comment_deleted", 0)
+                comments_marked_deleted += meta.get("_comment_marked_deleted", 0)
                 if posts_saved % 10 == 0:
                     db.commit()
             except Exception as exc:  # one bad post must not kill the run
@@ -80,15 +80,18 @@ def collect(
 
         # Reflect upstream post deletions: any stored post in this range that the
         # (fully-walked) live list no longer contains has been removed/blinded.
+        # We only flag it (is_deleted) — the archive is the point of this tool, and
+        # a post the source deleted is often the most interesting one to keep.
         # Skip when the list walk was cut short by max_pages, or when the run was
         # only partial — in both cases "missing" may just mean "not seen".
         if db and not dry_run and list_complete and status == "success":
             live = {int(m["post_no"]) for m in targets}
             stale = db.post_nos_in_range(gallery_id, lo, hi) - live
             if stale:
-                posts_deleted = db.delete_posts(list(stale))
-                log.info("removed %d posts deleted upstream: %s",
-                         posts_deleted, sorted(stale))
+                now = datetime.now().isoformat(timespec="seconds")
+                posts_marked_deleted = db.mark_posts_deleted(list(stale), now)
+                log.info("flagged %d posts as deleted upstream: %s",
+                         posts_marked_deleted, sorted(stale))
         elif not list_complete:
             log.info("list walk incomplete (max_pages); skipping deletion sweep")
 
@@ -116,8 +119,8 @@ def collect(
         "posts_found": posts_found,
         "posts_saved": posts_saved,
         "comments_saved": comments_saved,
-        "posts_deleted": posts_deleted,
-        "comments_deleted": comments_deleted,
+        "posts_marked_deleted": posts_marked_deleted,
+        "comments_marked_deleted": comments_marked_deleted,
         "status": status,
         "error": error,
         "dry_run": dry_run,
@@ -213,13 +216,13 @@ def _process_post(fetcher: Fetcher, db: Database, meta: dict,
         c["scraped_at"] = scraped_at
         db.upsert_comment(c)
 
-    # Reflect upstream deletions: drop stored comments that vanished from the
-    # fresh fetch. Only when we actually fetched — otherwise an empty list would
-    # wipe the thread for an adult/skipped post.
-    deleted = 0
+    # Reflect upstream deletions: flag stored comments that vanished from the
+    # fresh fetch (kept, not removed). Only when we actually fetched — otherwise
+    # an empty list would flag the whole thread for an adult/skipped post.
+    marked = 0
     if comments_fetched:
-        deleted = db.prune_comments(
-            meta["post_no"], [c["comment_no"] for c in comments]
+        marked = db.mark_comments_deleted(
+            meta["post_no"], [c["comment_no"] for c in comments], scraped_at
         )
     meta["_comment_saved"] = len(comments)
-    meta["_comment_deleted"] = deleted
+    meta["_comment_marked_deleted"] = marked

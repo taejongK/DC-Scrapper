@@ -58,6 +58,7 @@ th { color: var(--muted); font-weight: 600; position: sticky; top: 0; }
 tbody tr:hover { background: var(--panel); }
 td.num, th.num { text-align: right; }
 .badge { padding: 2px 7px; border-radius: 10px; font-size: 11px; background: var(--panel); border: 1px solid var(--border); }
+.badge.gone { color: var(--danger); border-color: var(--danger); }
 .clickable { cursor: pointer; color: var(--accent); }
 
 .toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
