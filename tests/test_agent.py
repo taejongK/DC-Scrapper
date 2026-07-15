@@ -98,6 +98,29 @@ def test_deep_report_logs_to_db(sample_db, mock_report):
     assert hist[0]["used_posts"] == 1                  # post_count
 
 
+def test_deep_report_logs_context_and_full_report(sample_db, mock_report):
+    r = llm_agent.deep_report(sample_db, question="에덴 여론?")
+    assert "context" not in r          # kept out of the live response (can be huge)
+    hist = llm_agent.recent_questions(sample_db)
+    d = llm_agent.get_logged_report(sample_db, log_id=hist[0]["id"])
+    assert d["question"] == "에덴 여론?"
+    assert "[글 #1]" in d["context"]    # the documents actually fed to the LLM
+    assert d["report"]["overview"] == "요약"          # full structured answer
+    assert d["report"]["positives"][0]["text"] == "좋다"
+    assert d["filters"]["search_terms"] == ["에덴"]
+
+
+def test_recent_questions_list_is_lean(sample_db, mock_report):
+    llm_agent.deep_report(sample_db, question="에덴 여론?")
+    row = llm_agent.recent_questions(sample_db)[0]
+    assert "context" not in row and "report" not in row   # list stays small
+    assert row["answer"] == "요약"                        # overview preview
+
+
+def test_get_logged_report_missing(sample_db):
+    assert llm_agent.get_logged_report(sample_db, log_id=9999) is None
+
+
 def test_recent_questions_newest_first(sample_db, mock_report):
     llm_agent.deep_report(sample_db, question="첫번째")
     llm_agent.deep_report(sample_db, question="두번째")
@@ -154,3 +177,16 @@ def test_api_ask_history(client, mock_report):
     r = client.get("/api/analysis/ask_history?limit=5")
     assert r.status_code == 200
     assert r.json()[0]["question"] == "기록되나?"
+
+
+def test_api_ask_history_detail(client, mock_report):
+    client.post("/api/analysis/ask", json={"question": "상세보기?"})
+    log_id = client.get("/api/analysis/ask_history?limit=1").json()[0]["id"]
+    d = client.get(f"/api/analysis/ask_history/{log_id}").json()
+    assert d["question"] == "상세보기?"
+    assert "[글 #1]" in d["context"]                # 검색된 context
+    assert d["report"]["overview"] == "요약"        # answer (구조화 전체)
+
+
+def test_api_ask_history_detail_404(client):
+    assert client.get("/api/analysis/ask_history/99999").status_code == 404

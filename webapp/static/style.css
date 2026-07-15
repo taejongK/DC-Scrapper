@@ -118,6 +118,28 @@ table.hm tbody th { text-align: right; padding-right: 8px; }
 .src a:hover { border-color: var(--accent); }
 #chat-answer .theme > b + .src { margin-left: 6px; }
 
+/* ---- report history ---- */
+.hist-list { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
+.hrow { display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+  padding: 8px 10px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
+.hrow:hover { background: var(--panel); border-color: var(--border); }
+.hrow.on { background: var(--panel); border-color: var(--accent); }
+.hrow .hq { color: var(--accent); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hrow .hmeta { color: var(--muted); font-size: 11px; white-space: nowrap; }
+#hist-detail { margin-top: 14px; }
+#hist-detail:not(:empty) { border-top: 1px solid var(--border); padding-top: 14px; }
+#hist-detail .sub { margin-top: 18px; }
+.hist-q { font-size: 15px; padding: 10px 12px; background: var(--panel); border-radius: 8px;
+  border-left: 3px solid var(--accent); }
+#hist-detail ul { margin: 4px 0 0; padding-left: 20px; line-height: 1.7; }
+#hist-detail .theme { padding: 8px 0; border-bottom: 1px solid var(--border); }
+#hist-detail .theme > div { color: var(--muted); font-size: 13px; margin-top: 2px; }
+details.ctx { border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+details.ctx summary { cursor: pointer; padding: 9px 12px; font-size: 13px; color: var(--accent); }
+details.ctx pre { margin: 0; padding: 12px; max-height: 420px; overflow: auto; white-space: pre-wrap;
+  word-break: break-word; font-size: 12px; line-height: 1.6; color: var(--muted);
+  border-top: 1px solid var(--border); }
+
 /* ---- filter bar: scoped to 목록/분석 tabs only ---- */
 .filters[hidden] { display: none; }   /* override .filters display:flex */
 .filter-scope { font-size: 12px; font-weight: 600; color: var(--accent);

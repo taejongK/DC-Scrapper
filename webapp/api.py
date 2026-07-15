@@ -223,8 +223,17 @@ def api_ask(req: AskRequest) -> dict:
 
 @router.get("/analysis/ask_history")
 def api_ask_history(limit: int = 20) -> list[dict]:
-    """Recent conversational-analysis questions and answers (newest first)."""
+    """Recent report questions (newest first). Lean list — no context/report body."""
     return llm_agent.recent_questions(db_path(), limit=limit)
+
+
+@router.get("/analysis/ask_history/{log_id}")
+def api_ask_history_detail(log_id: int) -> dict:
+    """One logged report in full: question + retrieved context + structured answer."""
+    row = llm_agent.get_logged_report(db_path(), log_id=log_id)
+    if row is None:
+        raise HTTPException(404, "report not found")
+    return row
 
 
 @router.get("/meta/galleries")

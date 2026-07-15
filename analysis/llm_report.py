@@ -226,7 +226,7 @@ def _cache_key(keywords, model, source, filters, post_nos) -> str:
 def keyword_report(db_path: str | Path = db.DEFAULT_DB, *, keyword: str,
                    source: str = "post_comment", refresh: bool = False,
                    max_posts: int = _DEFAULT_MAX_POSTS, model: str | None = None,
-                   **filters) -> dict:
+                   include_context: bool = False, **filters) -> dict:
     """Build (or fetch cached) an LLM report for one or more keywords.
 
     ``keyword`` may contain several terms separated by ``,``, ``|`` or ``or`` —
@@ -234,6 +234,10 @@ def keyword_report(db_path: str | Path = db.DEFAULT_DB, *, keyword: str,
     (posts + comments) or ``post`` (posts only). Returns the report fields plus
     ``keyword`` (display), ``keywords`` (list), ``post_count``, ``analyzed_posts``,
     ``truncated`` and ``cached`` bookkeeping. Each finding carries ``sources``.
+
+    ``include_context=True`` also returns ``context`` — the document blocks that
+    were actually fed to the LLM. It is attached only at return time so it never
+    enters the report cache.
     """
     keywords = _parse_keywords(keyword)
     if not keywords:
@@ -244,10 +248,13 @@ def keyword_report(db_path: str | Path = db.DEFAULT_DB, *, keyword: str,
     mdl = model or llm.model_name()
     docs, meta, total = _build_docs(db_path, keywords, include_comments, filters, max_posts)
     if not docs:
-        return {"keyword": display, "keywords": keywords, "post_count": 0,
-                "analyzed_posts": 0, "truncated": False, "cached": False, "empty": True,
-                "overview": "해당 키워드가 포함된 글이 없습니다.", "mood": "",
-                "themes": [], "positives": [], "negatives": [], "issues": [], "quotes": []}
+        empty = {"keyword": display, "keywords": keywords, "post_count": 0,
+                 "analyzed_posts": 0, "truncated": False, "cached": False, "empty": True,
+                 "overview": "해당 키워드가 포함된 글이 없습니다.", "mood": "",
+                 "themes": [], "positives": [], "negatives": [], "issues": [], "quotes": []}
+        if include_context:
+            empty["context"] = []
+        return empty
 
     post_nos = list(meta.keys())
     key = _cache_key(keywords, mdl, source, filters, post_nos)
@@ -260,6 +267,8 @@ def keyword_report(db_path: str | Path = db.DEFAULT_DB, *, keyword: str,
             if row:
                 cached = json.loads(row["report_json"])
                 cached["cached"] = True
+                if include_context:
+                    cached["context"] = docs
                 return cached
 
     if not llm.available():
@@ -305,4 +314,6 @@ def keyword_report(db_path: str | Path = db.DEFAULT_DB, *, keyword: str,
              json.dumps(report, ensure_ascii=False)),
         )
         conn.commit()
+    if include_context:      # after the cache write — context must not be cached
+        report["context"] = docs
     return report

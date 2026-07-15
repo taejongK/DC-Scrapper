@@ -213,23 +213,35 @@ def deep_report(db_path: str | Path = db.DEFAULT_DB, *, question: str,
                     "themes": [], "positives": [], "negatives": [], "issues": [], "quotes": []}
         report = llm_report.keyword_report(
             db_path, keyword=" or ".join(terms), source="post_comment",
-            max_posts=max_posts, model=model, **base)
+            max_posts=max_posts, model=model, include_context=True, **base)
     except llm.LLMError as exc:
         return {"error": str(exc), "question": q}
 
+    # the retrieved context is logged for later inspection, but kept out of the
+    # live response (it can be tens of KB)
+    context = report.pop("context", None)
     report["question"] = q
     report["search_terms"] = terms
-    _log_qa(db_path, report, base, model or llm.model_name())
+    _log_qa(db_path, report, base, model or llm.model_name(), context=context)
     return report
 
 
 # ---- Q&A history log -------------------------------------------------------
+# Stores, per report: the question, the retrieved `context` actually fed to the
+# LLM, and the answer (`report` = full structured JSON; `answer` = its overview,
+# kept for cheap list previews).
 def _ensure_log(conn) -> None:
     conn.execute(
         "CREATE TABLE IF NOT EXISTS qa_log ("
         "id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT, question TEXT, "
-        "answer TEXT, citations TEXT, filters TEXT, model TEXT, used_posts INTEGER)"
+        "answer TEXT, citations TEXT, filters TEXT, model TEXT, used_posts INTEGER, "
+        "context TEXT, report TEXT)"
     )
+    # additive migration for logs created before context/report existed
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(qa_log)").fetchall()}
+    for col in ("context", "report"):
+        if col not in cols:
+            conn.execute(f"ALTER TABLE qa_log ADD COLUMN {col} TEXT")
 
 
 def _report_sources(report: dict) -> list[dict]:
@@ -249,8 +261,9 @@ def _report_sources(report: dict) -> list[dict]:
     return out
 
 
-def _log_qa(db_path, report: dict, filters: dict, model: str) -> None:
-    """Record one report to the history log. Best-effort — never breaks the report."""
+def _log_qa(db_path, report: dict, filters: dict, model: str,
+            context: list[str] | None = None) -> None:
+    """Record one report (question + context + answer). Best-effort — never breaks it."""
     try:
         flt = dict(filters)
         flt["search_terms"] = report.get("search_terms", [])
@@ -258,12 +271,14 @@ def _log_qa(db_path, report: dict, filters: dict, model: str) -> None:
             _ensure_log(conn)
             conn.execute(
                 "INSERT INTO qa_log (created_at, question, answer, citations, "
-                "filters, model, used_posts) VALUES (?,?,?,?,?,?,?)",
+                "filters, model, used_posts, context, report) VALUES (?,?,?,?,?,?,?,?,?)",
                 (datetime.now().isoformat(timespec="seconds"),
                  report.get("question", ""), report.get("overview", ""),
                  json.dumps(_report_sources(report), ensure_ascii=False),
                  json.dumps({k: v for k, v in flt.items() if v}, ensure_ascii=False),
-                 model, report.get("post_count", 0)))
+                 model, report.get("post_count", 0),
+                 "\n\n".join(context) if context else None,
+                 json.dumps(report, ensure_ascii=False)))
             conn.commit()
     except Exception:  # noqa: BLE001 - logging is non-critical
         pass
@@ -286,3 +301,29 @@ def recent_questions(db_path: str | Path = db.DEFAULT_DB, *, limit: int = 20) ->
         d["citations"] = json.loads(d.get("citations") or "[]")
         out.append(d)
     return out
+
+
+def get_logged_report(db_path: str | Path = db.DEFAULT_DB, *, log_id: int) -> dict | None:
+    """One logged report in full: question + retrieved context + answer.
+
+    ``report`` is the structured answer (re-renderable); ``context`` is the raw
+    document blocks that were fed to the LLM. Returns None if the id is unknown.
+    """
+    try:
+        with db.connect(db_path) as conn:
+            _ensure_log(conn)
+            row = conn.execute(
+                "SELECT id, created_at, question, answer, citations, filters, model, "
+                "used_posts, context, report FROM qa_log WHERE id = ?", (int(log_id),)
+            ).fetchone()
+    except Exception:  # noqa: BLE001
+        return None
+    if row is None:
+        return None
+    d = dict(row)
+    d["citations"] = json.loads(d.get("citations") or "[]")
+    d["filters"] = json.loads(d.get("filters") or "{}")
+    d["report"] = json.loads(d["report"]) if d.get("report") else None
+    # older rows predate context/report capture
+    d["context"] = d.get("context") or ""
+    return d

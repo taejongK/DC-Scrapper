@@ -238,6 +238,7 @@ async function initLLM() {
 function loadChat() {
   if (llmReady && !$("#chat-status").textContent.startsWith("✅")) $("#chat-status").innerHTML = "";
   $("#chat-q").focus();
+  loadHistory();
 }
 async function runAsk() {
   const q = $("#chat-q").value.trim();
@@ -276,6 +277,11 @@ function renderReport(r) {
     $("#chat-answer").innerHTML = `<p class="note">${escapeHtml(r.overview || "관련 글이 없습니다.")}</p>`;
     return;
   }
+  $("#chat-answer").innerHTML = reportBodyHtml(r);
+  loadHistory();   // the new report is now logged — refresh the list
+}
+// the structured report markup, reused by the live view and the history detail
+function reportBodyHtml(r) {
   const src = (sources) => (sources && sources.length)
     ? ' <span class="src">' + sources.map((s) => s.url
         ? `<a href="${s.url}" target="_blank" title="${escapeHtml(s.title||"")}">#${s.post_no}</a>`
@@ -292,7 +298,7 @@ function renderReport(r) {
       (q.post_no != null ? `#${q.post_no}` : "");
     return `<div class="quote">“${escapeHtml(q.quote || "")}” <span class="qcite">${cite}</span></div>`;
   }).join("");
-  $("#chat-answer").innerHTML = `
+  return `
     <div class="llm-overview">${escapeHtml(r.overview || "")}</div>
     ${r.mood ? `<p class="llm-mood">🌡️ ${escapeHtml(r.mood)}</p>` : ""}
     ${themes ? `<h3 class="sub">📌 주요 주제</h3>${themes}` : ""}
@@ -305,6 +311,44 @@ function renderReport(r) {
 }
 $("#chat-btn").addEventListener("click", runAsk);
 $("#chat-q").addEventListener("keydown", (e) => { if (e.key === "Enter") runAsk(); });
+
+// ---------- Report history (질문 · context · answer) ----------
+async function loadHistory() {
+  const rows = await api("/api/analysis/ask_history?limit=20");
+  const list = $("#hist-list");
+  $("#hist-count").textContent = rows.length ? `(${rows.length}건)` : "";
+  if (!rows.length) { list.innerHTML = '<p class="note">아직 생성된 리포트가 없습니다.</p>'; return; }
+  list.innerHTML = rows.map((r) =>
+    `<div class="hrow" data-id="${r.id}">
+       <span class="hq">${escapeHtml(r.question || "")}</span>
+       <span class="hmeta">${(r.created_at || "").slice(5, 16).replace("T", " ")} · 매칭 ${fmt(r.used_posts)}글</span>
+     </div>`).join("");
+  $$("#hist-list .hrow").forEach((el) =>
+    el.addEventListener("click", () => openHistory(el.dataset.id)));
+}
+async function openHistory(id) {
+  const box = $("#hist-detail");
+  box.innerHTML = '<p class="note">불러오는 중…</p>';
+  const d = await api("/api/analysis/ask_history/" + id);
+  if (d.detail) { box.innerHTML = `<p class="note">❌ ${escapeHtml(d.detail)}</p>`; return; }
+  $$("#hist-list .hrow").forEach((el) =>
+    el.classList.toggle("on", el.dataset.id === String(id)));
+  const terms = (d.filters && d.filters.search_terms) || [];
+  const body = d.report ? reportBodyHtml(d.report)
+    : `<div class="llm-overview">${escapeHtml(d.answer || "")}</div>`;
+  const ctx = d.context
+    ? `<details class="ctx"><summary>펼쳐보기 — LLM에 실제 투입된 글·댓글 (${fmt(d.context.length)}자)</summary><pre>${escapeHtml(d.context)}</pre></details>`
+    : '<p class="note">이 기록은 context 저장 기능 이전에 생성되어 원문 컨텍스트가 없습니다.</p>';
+  box.innerHTML = `
+    <h3 class="sub">💬 질문</h3>
+    <div class="hist-q">${escapeHtml(d.question || "")}</div>
+    <p class="note">${escapeHtml(d.created_at || "")} · ${escapeHtml(d.model || "")} · 매칭 ${fmt(d.used_posts)}글${
+      terms.length ? " · 검색어 " + terms.map((t) => `<code>${escapeHtml(t)}</code>`).join(" ") : ""}</p>
+    <h3 class="sub">🧠 답변 (리포트)</h3>
+    ${body}
+    <h3 class="sub">📄 검색된 context</h3>
+    ${ctx}`;
+}
 
 // ---------- Issue bursts ----------
 async function loadBursts() {
