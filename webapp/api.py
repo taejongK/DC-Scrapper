@@ -236,6 +236,14 @@ def api_ask_history_detail(log_id: int) -> dict:
     return row
 
 
+@router.delete("/analysis/ask_history/{log_id}")
+def api_ask_history_delete(log_id: int) -> dict:
+    """Delete one logged report from the history."""
+    if not llm_agent.delete_logged_report(db_path(), log_id=log_id):
+        raise HTTPException(404, "report not found")
+    return {"deleted": log_id}
+
+
 @router.get("/meta/galleries")
 def api_galleries() -> list[dict]:
     """Distinct galleries + date bounds present in the DB (for filter UI)."""

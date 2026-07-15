@@ -303,6 +303,18 @@ def recent_questions(db_path: str | Path = db.DEFAULT_DB, *, limit: int = 20) ->
     return out
 
 
+def delete_logged_report(db_path: str | Path = db.DEFAULT_DB, *, log_id: int) -> bool:
+    """Delete one logged report. Returns True when a row was actually removed."""
+    try:
+        with db.connect(db_path) as conn:
+            _ensure_log(conn)
+            cur = conn.execute("DELETE FROM qa_log WHERE id = ?", (int(log_id),))
+            conn.commit()
+            return cur.rowcount > 0
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def get_logged_report(db_path: str | Path = db.DEFAULT_DB, *, log_id: int) -> dict | None:
     """One logged report in full: question + retrieved context + answer.
 

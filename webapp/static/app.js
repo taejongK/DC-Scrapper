@@ -321,16 +321,35 @@ async function loadHistory() {
   list.innerHTML = rows.map((r) =>
     `<div class="hrow" data-id="${r.id}">
        <span class="hq">${escapeHtml(r.question || "")}</span>
-       <span class="hmeta">${(r.created_at || "").slice(5, 16).replace("T", " ")} · 매칭 ${fmt(r.used_posts)}글</span>
+       <span class="hright">
+         <span class="hmeta">${(r.created_at || "").slice(5, 16).replace("T", " ")} · 매칭 ${fmt(r.used_posts)}글</span>
+         <button class="hdel" data-id="${r.id}" title="이 기록 삭제">✕</button>
+       </span>
      </div>`).join("");
   $$("#hist-list .hrow").forEach((el) =>
     el.addEventListener("click", () => openHistory(el.dataset.id)));
+  $$("#hist-list .hdel").forEach((el) =>
+    el.addEventListener("click", (e) => { e.stopPropagation(); delHistory(el.dataset.id); }));
+}
+async function delHistory(id) {
+  const row = $(`#hist-list .hrow[data-id="${id}"]`);
+  const q = row ? row.querySelector(".hq").textContent : "";
+  if (!confirm(`이 리포트 기록을 삭제할까요?\n\n"${q}"\n\n질문·검색 context·답변이 함께 지워지며 되돌릴 수 없습니다.`)) return;
+  const r = await fetch("/api/analysis/ask_history/" + id, { method: "DELETE" })
+    .then((x) => x.json()).catch((e) => ({ detail: String(e) }));
+  if (r.detail) { $("#hist-count").textContent = `(삭제 실패: ${r.detail})`; return; }
+  if ($("#hist-detail").dataset.id === String(id)) {
+    $("#hist-detail").innerHTML = "";
+    delete $("#hist-detail").dataset.id;
+  }
+  loadHistory();
 }
 async function openHistory(id) {
   const box = $("#hist-detail");
   box.innerHTML = '<p class="note">불러오는 중…</p>';
   const d = await api("/api/analysis/ask_history/" + id);
   if (d.detail) { box.innerHTML = `<p class="note">❌ ${escapeHtml(d.detail)}</p>`; return; }
+  box.dataset.id = String(id);
   $$("#hist-list .hrow").forEach((el) =>
     el.classList.toggle("on", el.dataset.id === String(id)));
   const terms = (d.filters && d.filters.search_terms) || [];

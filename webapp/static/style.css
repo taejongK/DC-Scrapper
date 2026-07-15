@@ -125,7 +125,13 @@ table.hm tbody th { text-align: right; padding-right: 8px; }
 .hrow:hover { background: var(--panel); border-color: var(--border); }
 .hrow.on { background: var(--panel); border-color: var(--accent); }
 .hrow .hq { color: var(--accent); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hrow .hright { display: flex; align-items: center; gap: 8px; flex: none; }
 .hrow .hmeta { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.hrow .hdel { padding: 1px 7px; font-size: 11px; line-height: 1.5; color: var(--muted);
+  background: transparent; border: 1px solid transparent; border-radius: 6px; opacity: 0; }
+.hrow:hover .hdel { opacity: 1; }
+.hrow .hdel:hover { color: var(--danger); border-color: var(--danger); background: var(--card); }
+.hrow .hdel:focus-visible { opacity: 1; }
 #hist-detail { margin-top: 14px; }
 #hist-detail:not(:empty) { border-top: 1px solid var(--border); padding-top: 14px; }
 #hist-detail .sub { margin-top: 18px; }

@@ -121,6 +121,24 @@ def test_get_logged_report_missing(sample_db):
     assert llm_agent.get_logged_report(sample_db, log_id=9999) is None
 
 
+def test_delete_logged_report(sample_db, mock_report):
+    llm_agent.deep_report(sample_db, question="지울 것")
+    llm_agent.deep_report(sample_db, question="남길 것")
+    hist = llm_agent.recent_questions(sample_db)
+    target = next(h["id"] for h in hist if h["question"] == "지울 것")
+
+    assert llm_agent.delete_logged_report(sample_db, log_id=target) is True
+    left = [h["question"] for h in llm_agent.recent_questions(sample_db)]
+    assert "지울 것" not in left and "남길 것" in left
+    assert llm_agent.get_logged_report(sample_db, log_id=target) is None
+    # deleting again reports "nothing removed"
+    assert llm_agent.delete_logged_report(sample_db, log_id=target) is False
+
+
+def test_delete_logged_report_missing(sample_db):
+    assert llm_agent.delete_logged_report(sample_db, log_id=9999) is False
+
+
 def test_recent_questions_newest_first(sample_db, mock_report):
     llm_agent.deep_report(sample_db, question="첫번째")
     llm_agent.deep_report(sample_db, question="두번째")
@@ -190,3 +208,16 @@ def test_api_ask_history_detail(client, mock_report):
 
 def test_api_ask_history_detail_404(client):
     assert client.get("/api/analysis/ask_history/99999").status_code == 404
+
+
+def test_api_ask_history_delete(client, mock_report):
+    client.post("/api/analysis/ask", json={"question": "삭제 대상"})
+    log_id = client.get("/api/analysis/ask_history?limit=1").json()[0]["id"]
+    r = client.delete(f"/api/analysis/ask_history/{log_id}")
+    assert r.status_code == 200 and r.json()["deleted"] == log_id
+    assert client.get(f"/api/analysis/ask_history/{log_id}").status_code == 404
+    assert all(h["id"] != log_id for h in client.get("/api/analysis/ask_history").json())
+
+
+def test_api_ask_history_delete_404(client):
+    assert client.delete("/api/analysis/ask_history/99999").status_code == 404
