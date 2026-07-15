@@ -1,0 +1,2 @@
+[console_scripts]
+dc-scraper = dc_scraper.__main__:main
